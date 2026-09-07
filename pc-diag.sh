@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# PC-DIAG v4.0 — Outil de diagnostic matériel et système professionnel
+# PC-DIAG v4.1 — Outil de diagnostic matériel et système professionnel
 #
 # Usage : sudo ./pc-diag.sh
 #
@@ -16,7 +16,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-VERSION="4.0"
+VERSION="4.1"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTDIR="${OUTDIR:-./rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
@@ -358,7 +358,20 @@ check_motherboard() {
     bios_ver="$(  dmidecode -t 0 2>/dev/null | awk -F: '/Version:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
     bios_date="$( dmidecode -t 0 2>/dev/null | awk -F: '/Release Date:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
 
-    [ -d /sys/firmware/efi ] && uefi_mode="UEFI (Secure Boot possible)" || uefi_mode="Legacy BIOS (MBR)"
+    local secure_boot="non applicable (Legacy)"
+    if [ -d /sys/firmware/efi ]; then
+        local sb_val
+        sb_val="$(cat /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | od -An -tu1 | awk '{print $NF}' | tail -1)"
+        if [ "$sb_val" = "1" ]; then
+            uefi_mode="UEFI — Secure Boot ACTIVÉ"
+            secure_boot="Activé"
+        else
+            uefi_mode="UEFI — Secure Boot désactivé"
+            secure_boot="Désactivé"
+        fi
+    else
+        uefi_mode="Legacy BIOS (MBR)"
+    fi
 
     local bios_year
     bios_year="$(echo "$bios_date" | grep -oE '[0-9]{4}' | tail -1)"
@@ -379,6 +392,7 @@ check_motherboard() {
     $(kv_row 'BIOS/UEFI — Version'   "${bios_ver:-inconnu}")
     $(kv_row 'BIOS/UEFI — Date'      "${bios_date:-inconnue}")
     $(kv_row 'Mode démarrage'         "$uefi_mode")
+    $(kv_row 'Secure Boot'            "$secure_boot")
     $(kv_close)"
 
     [ "$status" = "warn" ] && {
@@ -592,6 +606,16 @@ check_disks() {
                         add_reco "IMPORTANT" "${dev} — ${realloc} secteur(s) réalloué(s) : disque en fin de vie, sauvegarder les données et planifier le remplacement"
                     fi
 
+                    # Secteurs en attente de réallocation (indicateur précoce de défaillance)
+                    local pending
+                    pending="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                               awk '/Current_Pending_Sector/{print $NF;exit}')"
+                    if [ -n "$pending" ] && [ "$pending" -gt 0 ]; then
+                        health="${health} / ${pending} secteur(s) en attente"
+                        [ "$disk_status" = "ok" ] && disk_status="warn"
+                        add_reco "IMPORTANT" "${dev} — ${pending} secteur(s) en attente de réallocation : signe précoce de défaillance, sauvegarder les données immédiatement"
+                    fi
+
                     # Power On Hours → age estimation (SATA/HDD)
                     local poh
                     poh="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
@@ -617,6 +641,15 @@ check_disks() {
                              awk '/Temperature_Celsius|Airflow_Temperature_Cel/{print $10; exit}')"
                 [ -z "$disk_temp" ] && disk_temp="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
                              awk '/^Temperature:/{print $2; exit}')"
+                if [ -n "$disk_temp" ]; then
+                    # HDD seuil 55°C, SSD/NVMe seuil 70°C
+                    local temp_thresh=55
+                    echo "$type_label" | grep -qi 'ssd\|nvme' && temp_thresh=70
+                    if [ "$disk_temp" -gt "$temp_thresh" ] 2>/dev/null; then
+                        [ "$disk_status" = "ok" ] && disk_status="warn"
+                        add_reco "IMPORTANT" "${dev} — température disque élevée (${disk_temp}°C, seuil ${temp_thresh}°C) : vérifier ventilation du boîtier"
+                    fi
+                fi
 
                 # NVMe : spare + usure en plus des attributs classiques
                 if echo "$d" | grep -qi 'nvme'; then
@@ -669,10 +702,15 @@ check_disks() {
             speed_str="$(echo "$dd_out" | grep -oE '[0-9]+(\.[0-9]+)? (MB|GB)/s' | head -1)"
 
             if [ -n "$speed_str" ]; then
-                local max_ref=600
-                echo "$type_label" | grep -qi 'nvme' && max_ref=3500
+                # Référence réaliste par type : HDD≈150, SATA SSD≈550, NVMe≈3500
+                local max_ref=550
+                echo "$type_label" | grep -qi 'nvme'            && max_ref=3500
+                echo "$type_label" | grep -qi 'hdd\|mécanique'  && max_ref=150
                 local speed_num pct
                 speed_num="$(echo "$speed_str" | grep -oE '^[0-9]+(\.[0-9]+)?')"
+                # Convertir GB/s en MB/s si nécessaire
+                echo "$speed_str" | grep -qi 'GB/s' && \
+                    speed_num="$(awk -v s="$speed_num" 'BEGIN{printf "%.0f",s*1000}')"
                 pct="$(awk -v s="$speed_num" -v m="$max_ref" \
                     'BEGIN{v=int(s/m*100);print (v>100?100:v)}')"
                 speed_block="<div class='speed-wrap'>
@@ -680,6 +718,12 @@ check_disks() {
                   <div class='speed-bg'><div class='speed-fill' style='width:${pct}%'></div></div>
                   <span class='speed-label'>${speed_str}</span>
                 </div>"
+                # HDD lent = signe de défaillance ou fin de vie
+                if echo "$type_label" | grep -qi 'hdd\|mécanique'; then
+                    if [ "$(echo "$speed_num" | awk '{print ($1<60)}')" = "1" ] 2>/dev/null; then
+                        add_reco "CONSEILLÉ" "${dev} HDD — vitesse lecture faible (${speed_str}) : disque mécanique très lent, vérifier santé SMART, envisager remplacement par SSD"
+                    fi
+                fi
             fi
         fi
 
@@ -1080,6 +1124,7 @@ analyze_windows() {
         wo_sz="$(du -sh "$mp/Windows.old" 2>/dev/null | cut -f1)"
         content+="<p><strong>Windows.old</strong> détecté (${wo_sz:-?}) — ancienne installation non purgée, espace récupérable via Nettoyage de disque.</p>"
         [ "$status" = "ok" ] && status="warn"
+        add_reco "CONSEILLÉ" "Windows (${dev}) — dossier Windows.old de ${wo_sz:-taille inconnue} détecté : supprimer via Nettoyage de disque pour récupérer de l'espace"
     fi
 
     # Cache Windows Update
@@ -1139,7 +1184,10 @@ analyze_linux() {
         local errcount
         errcount="$(journalctl -D "$mp/var/log/journal" -p err -b -1 2>/dev/null | wc -l)" || errcount=0
         content+="<p>Erreurs journal (dernier démarrage connu) : <strong>${errcount}</strong></p>"
-        [ "${errcount:-0}" -gt 20 ] && [ "$status" = "ok" ] && status="warn"
+        if [ "${errcount:-0}" -gt 20 ]; then
+            [ "$status" = "ok" ] && status="warn"
+            add_reco "CONSEILLÉ" "Linux (${dev}) — ${errcount} erreurs dans le journal système : analyser avec journalctl -p err après démarrage"
+        fi
     fi
 
     # LUKS/chiffrement
@@ -1232,11 +1280,16 @@ write_recommendations_section() {
     local content="<p style='margin-bottom:12px;font-size:13px;color:var(--muted)'>
         Classées par priorité décroissante — à communiquer au propriétaire.</p>"
 
-    local -A priority_order=([URGENT]=0 [IMPORTANT]=1 [CONSEILLÉ]=2 [INFO]=3)
-    local -A priority_color=([URGENT]="crit" [IMPORTANT]="warn" [CONSEILLÉ]="info" [INFO]="ok")
-    local -A priority_label=([URGENT]="URGENT" [IMPORTANT]="IMPORTANT" [CONSEILLÉ]="CONSEILLÉ" [INFO]="INFO")
-
+    # Itération dans l'ordre de priorité (sans tableaux associatifs pour compatibilité bash 4.0)
+    local prio col lbl
     for prio in URGENT IMPORTANT CONSEILLÉ INFO; do
+        case "$prio" in
+            URGENT)    col="crit" ; lbl="URGENT"    ;;
+            IMPORTANT) col="warn" ; lbl="IMPORTANT" ;;
+            CONSEILLÉ) col="info" ; lbl="CONSEILLÉ" ;;
+            INFO)      col="ok"   ; lbl="INFO"       ;;
+        esac
+
         local items=()
         local r
         for r in "${RECOMMENDATIONS[@]}"; do
@@ -1247,9 +1300,8 @@ write_recommendations_section() {
         done
         [ "${#items[@]}" -eq 0 ] && continue
 
-        local col="${priority_color[$prio]}"
         content+="<div style='margin:10px 0 4px'>
-            <span class='badge badge-${col}' style='font-size:11px'>${priority_label[$prio]}</span>
+            <span class='badge badge-${col}' style='font-size:11px'>${lbl}</span>
         </div><ul style='margin:4px 0 8px 18px;font-size:13px;line-height:1.7'>"
         local item
         for item in "${items[@]}"; do

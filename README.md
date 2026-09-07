@@ -1,4 +1,4 @@
-# PC-DIAG v4.0
+# PC-DIAG v4.1
 
 Outil de diagnostic PC professionnel, autonome, sans IA, sans réseau.
 Conçu pour les bénévoles de Repair Cafés et associations de réparation informatique.
@@ -12,11 +12,11 @@ Génère un **rapport HTML complet** (imprimable en PDF) + **export TXT** en moi
 | # | Module | Ce qui est analysé |
 |---|--------|--------------------|
 | 1 | Outils système | Vérifie la présence de tous les outils nécessaires |
-| 2 | Carte mère & BIOS/UEFI | Fabricant, modèle, **numéro de série**, UUID, version BIOS, date, UEFI vs Legacy |
+| 2 | Carte mère & BIOS/UEFI | Fabricant, modèle, **numéro de série**, UUID, version BIOS, date, UEFI vs Legacy, **état Secure Boot** |
 | 3 | Processeur (CPU) | Modèle, cœurs, fréquence max, température (seuils 75°C / 90°C) |
 | 4 | Mémoire vive (RAM) | Capacité, utilisation, barrettes détectées (slot, fréquence, fabricant) |
 | 5 | Test intégrité RAM | `memtester` dynamique (25% RAM libre, min 64 Mo, max 512 Mo) — détecte les erreurs bit à bit |
-| 6 | Disques (SMART + vitesse) | SSD/HDD/NVMe, santé SMART, secteurs réalloués, **heures de fonctionnement** (âge estimé), **température disque**, vitesse lecture séquentielle |
+| 6 | Disques (SMART + vitesse) | SSD/HDD/NVMe, santé SMART, secteurs réalloués, **secteurs en attente (Current_Pending)**, **heures de fonctionnement** (âge estimé), **température disque**, vitesse lecture séquentielle calibrée par type |
 | 7 | Carte graphique (GPU) | Modèle, température si accessible |
 | 8 | Stress-test CPU | 30s de charge totale — température max, delta thermique, **détection throttling** |
 | 9 | Batterie | Usure réelle vs capacité d'origine, cycles de charge (alertes >20% / >40%) |
