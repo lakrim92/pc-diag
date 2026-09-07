@@ -54,9 +54,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
-smartctl() {
-    command smartctl "$0" | ':a;s/\([0--9]),\([0-9]\{3\}\)/\1\2;ta'
-}
+
+# Format a value with unit, or a fallback string if the value is empty
+_fmtval() { [ -n "$1" ] && printf '%s%s' "$1" "$2" || printf '%s' "${3:-?}"; }
 
 MISSING_TOOLS=()
 for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget memtester parted nvme; do
@@ -574,11 +574,15 @@ check_disks() {
         local model size rotation type_label disk_status="info"
         local health="Non vérifié" smart_block="" speed_block="" disk_temp="" poh_display=""
 
-        model="$(   lsblk -dno MODEL "$dev" 2>/dev/null | sed 's/ *$//')"
-        size="$(    lsblk -dno SIZE  "$dev" 2>/dev/null)"
-        rotation="$(lsblk -dno ROTA  "$dev" 2>/dev/null)"
+        model="$(    lsblk -dno MODEL "$dev" 2>/dev/null | sed 's/ *$//')"
+        size="$(     lsblk -dno SIZE  "$dev" 2>/dev/null)"
+        rotation="$( lsblk -dno ROTA  "$dev" 2>/dev/null)"
+        local tran
+        tran="$(     lsblk -dno TRAN  "$dev" 2>/dev/null)"
 
-        if [ "$rotation" = "1" ]; then
+        if [ "$tran" = "usb" ]; then
+            type_label="Clé/Disque USB"
+        elif [ "$rotation" = "1" ]; then
             type_label="HDD (mécanique)"
         elif [ "$rotation" = "0" ]; then
             echo "$d" | grep -qi 'nvme' && type_label="NVMe SSD" || type_label="SATA SSD"
@@ -692,10 +696,15 @@ check_disks() {
             else
                 # smartctl failed — try nvme-cli fallback + detect Intel VMD
                 local vmd_active=0
-                lsmod 2>/dev/null | grep -qi '^vmd ' && vmd_active=1
-                lspci  2>/dev/null | grep -qi 'volume management device\|VMD' && vmd_active=1
+                if [ "$tran" != "usb" ]; then
+                    lsmod 2>/dev/null | grep -qi '^vmd ' && vmd_active=1
+                    lspci  2>/dev/null | grep -qi 'volume management device\|VMD' && vmd_active=1
+                fi
 
-                if echo "$d" | grep -qi 'nvme' && need_cmd nvme; then
+                if [ "$tran" = "usb" ]; then
+                    health="Non interrogeable — périphérique USB"
+                    disk_status="info"
+                elif echo "$d" | grep -qi 'nvme' && need_cmd nvme; then
                     local nvme_smart
                     nvme_smart="$(nvme smart-log "$dev" 2>/dev/null)"
 
@@ -798,7 +807,7 @@ check_disks() {
                   $(kv_row 'Taille'                  "${size:-?}")
                   $(kv_row 'Type'                    "$type_label")
                   $(kv_row 'Santé SMART'             "$health")
-                  $(kv_row 'Température'             "${disk_temp:+${disk_temp}°C}${disk_temp:-non disponible}")
+                  $(kv_row 'Température'             "$(_fmtval "$disk_temp" '°C' 'non disponible')")
                   ${poh_display:+$(kv_row 'Heures de fonctionnement' "$poh_display")}
                   $(kv_close)
                   ${speed_block}${smart_block}"
@@ -948,9 +957,9 @@ check_stress_cpu() {
     $(kv_row 'Méthode stress'        "$stress_method")
     $(kv_row 'Durée / Threads'       "${duration}s sur $(nproc) thread(s)")
     $(kv_row 'Température initiale'  "${temp_before}°C")
-    $(kv_row 'Température maximale'  "${temp_max:+${temp_max}°C}${temp_max:-?}")
-    $(kv_row 'Température post-test' "${temp_after:+${temp_after}°C}${temp_after:-?}")
-    $(kv_row 'Delta (repos → max)'   "${delta:+${delta}°C}${delta:-?}")
+    $(kv_row 'Température maximale'  "$(_fmtval "$temp_max" '°C' '?')")
+    $(kv_row 'Température post-test' "$(_fmtval "$temp_after" '°C' '?')")
+    $(kv_row 'Delta (repos → max)'   "$(_fmtval "$delta" '°C' '?')")
     $(kv_row 'Fréquence fin de test' "$throttle_line")
     $(kv_close)"
 
@@ -1012,7 +1021,7 @@ check_battery() {
     $(kv_row 'Charge actuelle'         "${cap_pct:-?}%")
     $(kv_row 'Capacité pleine (actuelle)' "$ef_wh")
     $(kv_row "Capacité pleine (origine)"  "$efd_wh")
-    $(kv_row 'Usure estimée'           "${wear_pct:+${wear_pct}%}${wear_pct:-inconnue}")
+    $(kv_row 'Usure estimée'           "$(_fmtval "$wear_pct" '%' 'inconnue')")
     $(kv_row 'Cycles de charge'        "${cycle:-inconnu}")
     $(kv_close)"
 
@@ -1270,7 +1279,7 @@ analyze_macos() {
 
     content="$(kv_open)
     $(kv_row 'Partition'          "$dev")
-    $(kv_row 'Occupation disque'  "${usage_pct:+${usage_pct}%}${usage_pct:-non lisible}")
+    $(kv_row 'Occupation disque'  "$(_fmtval "$usage_pct" '%' 'non lisible')")
     $(kv_close)
     $(warn_note 'Support APFS depuis Linux limité. FileVault (chiffrement macOS, très répandu) bloque toute analyse hors-ligne. Sur Apple Silicon (M1/M2/M3+) : démarrage USB externe verrouillé par défaut — utiliser le diagnostic Apple natif (⌘+D au démarrage).')"
 
