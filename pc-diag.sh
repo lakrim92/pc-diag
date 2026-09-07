@@ -54,9 +54,12 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
+smartctl() {
+    command smartctl "$0" | ':a;s/\([0--9]),\([0-9]\{3\}\)/\1\2;ta'
+}
 
 MISSING_TOOLS=()
-for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget memtester parted; do
+for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget memtester parted nvme; do
     need_cmd "$_t" || MISSING_TOOLS+=("$_t")
 done
 
@@ -687,8 +690,67 @@ check_disks() {
                         head -15 | html_escape)</pre>"
                 fi
             else
-                health="Non interrogeable (contrôleur RAID, USB ou VM)"
-                disk_status="warn"
+                # smartctl failed — try nvme-cli fallback + detect Intel VMD
+                local vmd_active=0
+                lsmod 2>/dev/null | grep -qi '^vmd ' && vmd_active=1
+                lspci  2>/dev/null | grep -qi 'volume management device\|VMD' && vmd_active=1
+
+                if echo "$d" | grep -qi 'nvme' && need_cmd nvme; then
+                    local nvme_smart
+                    nvme_smart="$(nvme smart-log "$dev" 2>/dev/null)"
+
+                    if [ -n "$nvme_smart" ]; then
+                        # Parse nvme smart-log output
+                        local nvme_spare nvme_used nvme_temp_raw nvme_poh
+                        nvme_spare="$(   echo "$nvme_smart" | awk -F'[: %]+' '/avail_spare[^_]/{gsub(/[^0-9]/,"",$2);print $2+0;exit}')"
+                        nvme_used="$(    echo "$nvme_smart" | awk -F'[: %]+' '/percent_used/{gsub(/[^0-9]/,"",$2);print $2+0;exit}')"
+                        nvme_temp_raw="$(echo "$nvme_smart" | awk '/temperature/{match($0,/[0-9]+/);if(RSTART)print substr($0,RSTART,RLENGTH);exit}')"
+                        nvme_poh="$(     echo "$nvme_smart" | awk -F'[: ,]+' '/power_on_hours/{gsub(/[^0-9]/,"",$2);print $2+0;exit}')"
+
+                        # Health assessment
+                        if [ -n "$nvme_spare" ] && [ "$nvme_spare" -lt 10 ] 2>/dev/null; then
+                            health="CRITIQUE — spare réservé <10% (${nvme_spare}%)"
+                            disk_status="crit"
+                            add_reco "URGENT" "${dev} NVMe — spare réservé critique (${nvme_spare}%) : SSD en fin de vie, remplacer immédiatement"
+                        elif [ -n "$nvme_used" ] && [ "$nvme_used" -gt 90 ] 2>/dev/null; then
+                            health="ATTENTION — usure ${nvme_used}%"
+                            disk_status="warn"
+                            add_reco "IMPORTANT" "${dev} NVMe — usure ${nvme_used}% : prévoir remplacement à moyen terme"
+                        else
+                            health="PASSED ✓ (via nvme-cli)"
+                            disk_status="ok"
+                        fi
+                        [ "$vmd_active" = "1" ] && health="${health} — Intel VMD détecté"
+
+                        # Power On Hours
+                        if [ -n "$nvme_poh" ] && [ "$nvme_poh" -gt 0 ] 2>/dev/null; then
+                            local nvme_poh_y nvme_poh_d
+                            nvme_poh_y=$(( nvme_poh / 8760 ))
+                            nvme_poh_d=$(( (nvme_poh % 8760) / 24 ))
+                            poh_display="${nvme_poh}h (~${nvme_poh_y} an(s) et ${nvme_poh_d} jour(s))"
+                        fi
+                        [ -n "$nvme_temp_raw" ] && disk_temp="$nvme_temp_raw"
+
+                        smart_block="<pre>$(echo "$nvme_smart" | \
+                            grep -Ei 'temperature|avail_spare|percent_used|data_units_written|power_on_hours|unsafe_shutdowns|media_errors' | \
+                            head -12 | html_escape)</pre>"
+                    else
+                        # nvme-cli present but failed too
+                        health="Non interrogeable (contrôleur RAID/VMD, USB ou VM)"
+                        disk_status="warn"
+                        [ "$vmd_active" = "1" ] && {
+                            health="Non interrogeable — Intel VMD actif"
+                            add_reco "CONSEILLÉ" "${dev} NVMe — Intel VMD/RST actif : SMART inaccessible via smartctl et nvme-cli. Pour activer le SMART : BIOS → SATA Operation → passer de 'RAID On' à 'AHCI' (attention : peut nécessiter réinstallation de Windows)"
+                        }
+                    fi
+                else
+                    health="Non interrogeable (contrôleur RAID, USB ou VM)"
+                    disk_status="warn"
+                    [ "$vmd_active" = "1" ] && {
+                        health="Non interrogeable — Intel VMD actif (installer nvme-cli pour tenter l'accès SMART)"
+                        add_reco "CONSEILLÉ" "${dev} NVMe — Intel VMD/RST actif : installer nvme-cli (pacman -Sy nvme-cli) pour tenter la lecture SMART malgré le VMD"
+                    }
+                fi
             fi
         else
             health="smartctl absent — santé non vérifiable"
