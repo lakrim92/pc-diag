@@ -627,6 +627,7 @@ check_disks() {
                     local poh
                     poh="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
                            awk '/Power_On_Hours/{print $10; exit}')"
+                    poh="${poh//[^0-9]/}"
                     if [ -n "$poh" ] && [ "$poh" -gt 0 ]; then
                         local poh_y poh_d
                         poh_y=$(( poh / 8760 ))
@@ -665,6 +666,8 @@ check_disks() {
                                   awk '/Available Spare:/{gsub(/%/,"",$3);print $3;exit}')"
                     nvme_used="$( smartctl -A $smart_extra "$dev" 2>/dev/null | \
                                   awk '/Percentage Used:/{gsub(/%/,"",$3);print $3;exit}')"
+                    nvme_spare="${nvme_spare//[^0-9]/}"
+                    nvme_used="${nvme_used//[^0-9]/}"
                     if [ -n "$nvme_spare" ] && [ "$nvme_spare" -lt 10 ]; then
                         health="CRITIQUE — spare réservé <10% (${nvme_spare}%)"
                         disk_status="crit"
@@ -679,6 +682,7 @@ check_disks() {
                     local nvme_poh
                     nvme_poh="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
                                 awk '/Power On Hours:/{print $4; exit}')"
+                    nvme_poh="${nvme_poh//[^0-9]/}"
                     if [ -n "$nvme_poh" ] && [ "$nvme_poh" -gt 0 ]; then
                         local nvme_poh_y nvme_poh_d
                         nvme_poh_y=$(( nvme_poh / 8760 ))
