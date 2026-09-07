@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# PC-DIAG v2.0 — Outil de diagnostic matériel et système professionnel
+# PC-DIAG v4.0 — Outil de diagnostic matériel et système professionnel
 #
 # Usage : sudo ./pc-diag.sh
 #
@@ -16,11 +16,12 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-VERSION="3.0"
+VERSION="4.0"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTDIR="${OUTDIR:-./rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
 REPORT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.html"
+TXT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.txt"
 HOSTNAME_DIAG="$(hostname 2>/dev/null || echo inconnu)"
 
 mkdir -p "$OUTDIR" "$MOUNT_ROOT"
@@ -36,6 +37,13 @@ _cleanup() {
     done
 }
 trap _cleanup EXIT INT TERM
+
+# Recommandations collectées pendant le diagnostic
+declare -a RECOMMENDATIONS=()
+add_reco() {
+    # add_reco "URGENT|IMPORTANT|CONSEILLÉ|INFO" "texte"
+    RECOMMENDATIONS+=("${1}:::${2}")
+}
 
 # ---------------------------------------------------------------------------
 # PRÉ-REQUIS
@@ -373,7 +381,10 @@ check_motherboard() {
     $(kv_row 'Mode démarrage'         "$uefi_mode")
     $(kv_close)"
 
-    [ "$status" = "warn" ] && content+="$(warn_note 'BIOS/UEFI antérieur à 2015 : mises à jour firmware probablement indisponibles, vulnérabilités connues non corrigées.')"
+    [ "$status" = "warn" ] && {
+        content+="$(warn_note 'BIOS/UEFI antérieur à 2015 : mises à jour firmware probablement indisponibles, vulnérabilités connues non corrigées.')"
+        add_reco "CONSEILLÉ" "BIOS/UEFI ancien (${bios_date:-date inconnue}) — vérifier les mises à jour disponibles sur le site du fabricant (${bios_vendor:-inconnu})"
+    }
 
     add_section "Carte mère & BIOS/UEFI" "$status" "$content"
 }
@@ -417,8 +428,14 @@ check_cpu() {
     $(kv_row 'Température'       "$temp")
     $(kv_close)"
 
-    [ "$status" = "crit" ] && content+="$(warn_note 'Température critique (>90°C) : pasta thermique à renouveler, vérifier ventilateur et accumulation de poussière.')"
-    [ "$status" = "warn" ] && content+="$(warn_note 'Température élevée (>75°C) : nettoyage conseillé.')"
+    [ "$status" = "crit" ] && {
+        content+="$(warn_note 'Température critique (>90°C) : pasta thermique à renouveler, vérifier ventilateur et accumulation de poussière.')"
+        add_reco "URGENT" "Température CPU critique (${temp}) — renouveler la pasta thermique et nettoyer le refroidissement immédiatement"
+    }
+    [ "$status" = "warn" ] && {
+        content+="$(warn_note 'Température élevée (>75°C) : nettoyage conseillé.')"
+        add_reco "IMPORTANT" "Température CPU élevée (${temp}) — nettoyage ventilateurs et renouvellement pasta thermique conseillé"
+    }
 
     add_section "Processeur (CPU)" "$status" "$content"
 }
@@ -463,8 +480,14 @@ check_ram() {
         content+="<p><strong>Barrettes mémoire :</strong></p><pre>$(echo "$dimm_info" | html_escape)</pre>"
     fi
 
-    [ "$status" = "crit" ] && content+="$(warn_note 'Mémoire insuffisante (<1 Go) : performances très dégradées pour tout usage moderne.')"
-    [ "$status" = "warn" ] && content+="$(warn_note 'Mémoire faible (<2 Go) : Windows 10/11 nécessite 4 Go minimum.')"
+    [ "$status" = "crit" ] && {
+        content+="$(warn_note 'Mémoire insuffisante (<1 Go) : performances très dégradées pour tout usage moderne.')"
+        add_reco "IMPORTANT" "RAM insuffisante (${total:-?}) — ajouter au minimum 4 Go pour un usage Windows 10/11 moderne"
+    }
+    [ "$status" = "warn" ] && {
+        content+="$(warn_note 'Mémoire faible (<2 Go) : Windows 10/11 nécessite 4 Go minimum.')"
+        add_reco "CONSEILLÉ" "RAM faible (${total:-?}) — extension à 4 Go minimum recommandée pour de meilleures performances"
+    }
     content+="$(note 'Test intégrité bit à bit : lancer <code>memtest86+</code> depuis le menu Ventoy — prévoir plusieurs passes (20-60 min).')"
 
     add_section "Mémoire vive (RAM)" "$status" "$content"
@@ -481,14 +504,21 @@ check_ram_test() {
         return
     fi
 
-    local status="ok" content="" output="" errors=0
-    printf "  [memtester] Test rapide 256 Mo, 1 passe...\n"
+    # Dynamic size: 25% of free RAM, between 64MB and 512MB
+    local avail_mb test_mb
+    avail_mb="$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')"
+    test_mb=$(( ${avail_mb:-256} / 4 ))
+    [ "$test_mb" -lt 64  ] && test_mb=64
+    [ "$test_mb" -gt 512 ] && test_mb=512
 
-    output="$(memtester 256M 1 2>&1)" || true
-    errors="$(echo "$output" | grep -cE 'FAILURE|Error' 2>/dev/null)" || errors=0
+    local status="ok" content="" output="" errors=0
+    printf "  [memtester] Test rapide %d Mo, 1 passe...\n" "$test_mb"
+
+    output="$(memtester "${test_mb}M" 1 2>&1)" || true
+    errors="$(echo "$output" | grep -E 'FAILURE|Error' 2>/dev/null | wc -l)" || errors=0
 
     content="$(kv_open)
-    $(kv_row 'Taille testée'     '256 Mo')
+    $(kv_row 'Taille testée'     "${test_mb} Mo (25% RAM disponible)")
     $(kv_row 'Nombre de passes'  '1')
     $(kv_row 'Erreurs détectées' "${errors}")
     $(kv_close)"
@@ -497,6 +527,7 @@ check_ram_test() {
         status="crit"
         content+="<pre>$(echo "$output" | grep -E 'FAILURE|Error' | head -20 | html_escape)</pre>"
         content+="$(warn_note 'Erreurs mémoire détectées. Tester les barrettes une par une pour isoler la défaillante. NE PAS remettre en service sans remplacement.')"
+        add_reco "URGENT" "Erreurs RAM détectées (${errors} erreur(s) sur ${test_mb} Mo) — tester chaque barrette individuellement, remplacer la défaillante avant remise en service"
     else
         content+="$(note 'Test rapide passé sans erreur. Pour une validation complète (toute la RAM, plusieurs passes) : lancer memtest86+ depuis Ventoy.')"
     fi
@@ -524,7 +555,7 @@ check_disks() {
     for d in $disks; do
         local dev="/dev/$d"
         local model size rotation type_label disk_status="info"
-        local health="Non vérifié" smart_block="" speed_block="" disk_temp=""
+        local health="Non vérifié" smart_block="" speed_block="" disk_temp="" poh_display=""
 
         model="$(   lsblk -dno MODEL "$dev" 2>/dev/null | sed 's/ *$//')"
         size="$(    lsblk -dno SIZE  "$dev" 2>/dev/null)"
@@ -558,10 +589,27 @@ check_disks() {
                     if [ -n "$realloc" ] && [ "$realloc" -gt 0 ]; then
                         health="PASSED — ${realloc} secteur(s) réalloué(s)"
                         disk_status="warn"
+                        add_reco "IMPORTANT" "${dev} — ${realloc} secteur(s) réalloué(s) : disque en fin de vie, sauvegarder les données et planifier le remplacement"
+                    fi
+
+                    # Power On Hours → age estimation (SATA/HDD)
+                    local poh
+                    poh="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                           awk '/Power_On_Hours/{print $10; exit}')"
+                    if [ -n "$poh" ] && [ "$poh" -gt 0 ]; then
+                        local poh_y poh_d
+                        poh_y=$(( poh / 8760 ))
+                        poh_d=$(( (poh % 8760) / 24 ))
+                        poh_display="${poh}h (~${poh_y} an(s) et ${poh_d} jour(s))"
+                        [ "$poh" -gt 35040 ] && {
+                            [ "$disk_status" = "ok" ] && disk_status="warn"
+                            add_reco "CONSEILLÉ" "${dev} — ${poh_y} ans de fonctionnement (${poh}h) : disque vieillissant, surveiller de près et planifier remplacement"
+                        }
                     fi
                 elif echo "$smart_h" | grep -qi "FAILED"; then
                     health="FAILED ✗ — REMPLACEMENT URGENT"
                     disk_status="crit"
+                    add_reco "URGENT" "${dev} — SMART FAILED : disque défaillant, remplacer immédiatement avant perte de données"
                 fi
 
                 # Température disque (attribut SATA ou ligne NVMe)
@@ -580,9 +628,22 @@ check_disks() {
                     if [ -n "$nvme_spare" ] && [ "$nvme_spare" -lt 10 ]; then
                         health="CRITIQUE — spare réservé <10% (${nvme_spare}%)"
                         disk_status="crit"
+                        add_reco "URGENT" "${dev} NVMe — spare réservé critique (${nvme_spare}%) : SSD en fin de vie, remplacer immédiatement"
                     elif [ -n "$nvme_used" ] && [ "$nvme_used" -gt 90 ]; then
                         health="ATTENTION — usure ${nvme_used}%"
                         [ "$disk_status" = "ok" ] && disk_status="warn"
+                        add_reco "IMPORTANT" "${dev} NVMe — usure ${nvme_used}% : prévoir remplacement à moyen terme"
+                    fi
+
+                    # Power On Hours NVMe → age estimation
+                    local nvme_poh
+                    nvme_poh="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                                awk '/Power On Hours:/{print $4; exit}')"
+                    if [ -n "$nvme_poh" ] && [ "$nvme_poh" -gt 0 ]; then
+                        local nvme_poh_y nvme_poh_d
+                        nvme_poh_y=$(( nvme_poh / 8760 ))
+                        nvme_poh_d=$(( (nvme_poh % 8760) / 24 ))
+                        poh_display="${nvme_poh}h (~${nvme_poh_y} an(s) et ${nvme_poh_d} jour(s))"
                     fi
                     smart_block="<pre>$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
                         grep -E 'Temperature:|Available Spare:|Percentage Used:|Data Units Written:|Power On Hours:|Unsafe Shutdowns:' | \
@@ -628,10 +689,11 @@ check_disks() {
         content+="<div class='disk-head'>${dev} — ${model:-modèle inconnu}
                     <span class='badge badge-${disk_status}'>$(status_label "$disk_status")</span></div>
                   $(kv_open)
-                  $(kv_row 'Taille'            "${size:-?}")
-                  $(kv_row 'Type'              "$type_label")
-                  $(kv_row 'Santé SMART'       "$health")
-                  $(kv_row 'Température'       "${disk_temp:+${disk_temp}°C}${disk_temp:-non disponible}")
+                  $(kv_row 'Taille'                  "${size:-?}")
+                  $(kv_row 'Type'                    "$type_label")
+                  $(kv_row 'Santé SMART'             "$health")
+                  $(kv_row 'Température'             "${disk_temp:+${disk_temp}°C}${disk_temp:-non disponible}")
+                  ${poh_display:+$(kv_row 'Heures de fonctionnement' "$poh_display")}
                   $(kv_close)
                   ${speed_block}${smart_block}"
     done
@@ -787,9 +849,17 @@ check_stress_cpu() {
     $(kv_close)"
 
     case "$status" in
-        crit) content+="$(warn_note 'Température critique (>90°C) sous charge : pasta thermique défaillante ou refroidissement insuffisant — à traiter avant remise en service.')" ;;
-        warn) content+="$(warn_note 'Température élevée (>75°C) ou throttling détecté (<75% fréquence max) : nettoyage et remplacement pasta thermique conseillés.')" ;;
-        ok)   content+="$(note 'Comportement thermique correct sous charge totale — refroidissement en bon état.')" ;;
+        crit)
+            content+="$(warn_note 'Température critique (>90°C) sous charge : pasta thermique défaillante ou refroidissement insuffisant — à traiter avant remise en service.')"
+            add_reco "URGENT" "Température critique sous charge (${temp_max}°C max) — renouveler la pasta thermique, nettoyer le refroidissement avant remise en service"
+            ;;
+        warn)
+            content+="$(warn_note 'Température élevée (>75°C) ou throttling détecté (<75% fréquence max) : nettoyage et remplacement pasta thermique conseillés.')"
+            add_reco "IMPORTANT" "Température élevée ou throttling sous charge (${temp_max}°C max) — nettoyage ventilateurs et pasta thermique conseillés"
+            ;;
+        ok)
+            content+="$(note 'Comportement thermique correct sous charge totale — refroidissement en bon état.')"
+            ;;
     esac
 
     add_section "Stress-test CPU (${duration}s charge totale)" "$status" "$content"
@@ -840,8 +910,14 @@ check_battery() {
     $(kv_row 'Cycles de charge'        "${cycle:-inconnu}")
     $(kv_close)"
 
-    [ "$status" = "crit" ] && content+="$(warn_note 'Usure > 40% : autonomie fortement dégradée, remplacement conseillé.')"
-    [ "$status" = "warn" ] && content+="$(warn_note 'Usure > 20% : autonomie réduite, à surveiller.')"
+    [ "$status" = "crit" ] && {
+        content+="$(warn_note 'Usure > 40% : autonomie fortement dégradée, remplacement conseillé.')"
+        add_reco "IMPORTANT" "Batterie très usée (${wear_pct}% d'usure) — autonomie fortement dégradée, remplacement conseillé"
+    }
+    [ "$status" = "warn" ] && {
+        content+="$(warn_note 'Usure > 20% : autonomie réduite, à surveiller.')"
+        add_reco "CONSEILLÉ" "Batterie usée (${wear_pct}% d'usure) — autonomie réduite, à surveiller"
+    }
 
     add_section "Batterie" "$status" "$content"
 }
@@ -902,8 +978,13 @@ analyze_windows() {
 
     usage_pct="$(df -h "$mp" 2>/dev/null | awk 'NR==2{gsub("%","",$5);print $5}')"
     if [ -n "$usage_pct" ]; then
-        [ "$usage_pct" -ge 90 ] && status="crit"
-        [ "$usage_pct" -ge 75 ] && [ "$usage_pct" -lt 90 ] && status="warn"
+        if [ "$usage_pct" -ge 90 ]; then
+            status="crit"
+            add_reco "URGENT" "Disque Windows (${dev}) presque plein (${usage_pct}%) — nettoyer les fichiers temporaires, Windows.old et le cache Windows Update"
+        elif [ "$usage_pct" -ge 75 ]; then
+            status="warn"
+            add_reco "IMPORTANT" "Disque Windows (${dev}) rempli à ${usage_pct}% — libérer de l'espace (fichiers temp, corbeille, cache)"
+        fi
     fi
 
     content="$(kv_open)
@@ -1143,6 +1224,84 @@ detect_os_partitions() {
 }
 
 # ---------------------------------------------------------------------------
+# SECTION RECOMMANDATIONS
+# ---------------------------------------------------------------------------
+write_recommendations_section() {
+    [ "${#RECOMMENDATIONS[@]}" -eq 0 ] && return
+
+    local content="<p style='margin-bottom:12px;font-size:13px;color:var(--muted)'>
+        Classées par priorité décroissante — à communiquer au propriétaire.</p>"
+
+    local -A priority_order=([URGENT]=0 [IMPORTANT]=1 [CONSEILLÉ]=2 [INFO]=3)
+    local -A priority_color=([URGENT]="crit" [IMPORTANT]="warn" [CONSEILLÉ]="info" [INFO]="ok")
+    local -A priority_label=([URGENT]="URGENT" [IMPORTANT]="IMPORTANT" [CONSEILLÉ]="CONSEILLÉ" [INFO]="INFO")
+
+    for prio in URGENT IMPORTANT CONSEILLÉ INFO; do
+        local items=()
+        local r
+        for r in "${RECOMMENDATIONS[@]}"; do
+            local p t
+            p="${r%%:::*}"
+            t="${r#*:::}"
+            [ "$p" = "$prio" ] && items+=("$t")
+        done
+        [ "${#items[@]}" -eq 0 ] && continue
+
+        local col="${priority_color[$prio]}"
+        content+="<div style='margin:10px 0 4px'>
+            <span class='badge badge-${col}' style='font-size:11px'>${priority_label[$prio]}</span>
+        </div><ul style='margin:4px 0 8px 18px;font-size:13px;line-height:1.7'>"
+        local item
+        for item in "${items[@]}"; do
+            content+="<li>$(printf '%s' "$item" | html_escape)</li>"
+        done
+        content+="</ul>"
+    done
+
+    bump "warn"
+    cat >> "$REPORT_FILE" <<HTML
+<div class="section">
+  <div class="section-head status-warn">
+    <h2>Recommandations</h2>
+    <span class="badge badge-warn">${#RECOMMENDATIONS[@]} point(s)</span>
+  </div>
+  <div class="section-body">${content}</div>
+</div>
+HTML
+}
+
+# ---------------------------------------------------------------------------
+# EXPORT TXT
+# ---------------------------------------------------------------------------
+write_txt_summary() {
+    {
+        printf "PC-DIAG v%s — Rapport diagnostic\n" "$VERSION"
+        printf "Hôte : %s — %s\n" "$HOSTNAME_DIAG" "$(date '+%d/%m/%Y %H:%M:%S')"
+        printf "═%.0s" {1..60}; printf "\n"
+        printf "RÉSUMÉ : %d OK / %d Attention(s) / %d Critique(s) / %d Info\n\n" \
+               "$COUNT_OK" "$COUNT_WARN" "$COUNT_CRIT" "$COUNT_INFO"
+
+        if [ "${#RECOMMENDATIONS[@]}" -gt 0 ]; then
+            printf "RECOMMANDATIONS :\n"
+            local r
+            for r in "${RECOMMENDATIONS[@]}"; do
+                local p t
+                p="${r%%:::*}"
+                t="${r#*:::}"
+                printf "  [%s] %s\n" "$p" "$t"
+            done
+            printf "\n"
+        fi
+
+        printf "Rapport HTML complet : %s\n" "$REPORT_FILE"
+        printf "═%.0s" {1..60}; printf "\n"
+        printf "100%% local — aucune donnée n'a quitté cette machine.\n"
+    } > "$TXT_FILE"
+
+    echo "  Résumé TXT : ${TXT_FILE}"
+}
+
+# ---------------------------------------------------------------------------
 # ORCHESTRATION
 # ---------------------------------------------------------------------------
 main() {
@@ -1168,6 +1327,7 @@ main() {
     printf "  [OS]  Détection et analyse des systèmes installés...\n"
     detect_os_partitions
 
+    write_recommendations_section
     write_html_footer
 
     # Injection du bloc de synthèse après <div class="container">
@@ -1192,14 +1352,21 @@ main() {
     echo "  → Imprimer en PDF : Firefox > Fichier > Imprimer > Enregistrer en PDF"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Ouverture automatique du rapport dans le navigateur disponible
-    for _browser in firefox chromium chromium-browser; do
-        if need_cmd "$_browser"; then
-            printf "\n  → Ouverture automatique dans %s...\n" "$_browser"
-            "$_browser" "$REPORT_FILE" >/dev/null 2>&1 &
-            break
-        fi
-    done
+    write_txt_summary
+
+    # Ouverture automatique du rapport uniquement si session graphique disponible
+    if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        for _browser in firefox chromium chromium-browser; do
+            if need_cmd "$_browser"; then
+                printf "\n  → Ouverture automatique dans %s...\n" "$_browser"
+                "$_browser" "$REPORT_FILE" >/dev/null 2>&1 &
+                break
+            fi
+        done
+    else
+        printf "\n  → Pas de session graphique (X11/Wayland) — ouvrir manuellement :\n"
+        printf "      firefox '%s'\n" "$REPORT_FILE"
+    fi
 }
 
 main "$@"

@@ -1,13 +1,13 @@
-# PC-DIAG v3.0
+# PC-DIAG v4.0
 
 Outil de diagnostic PC professionnel, autonome, sans IA, sans réseau.
 Conçu pour les bénévoles de Repair Cafés et associations de réparation informatique.
 
-Génère un **rapport HTML complet** (imprimable en PDF) en moins de 3 minutes.
+Génère un **rapport HTML complet** (imprimable en PDF) + **export TXT** en moins de 3 minutes.
 
 ---
 
-## Ce que ça diagnostique — 11 modules
+## Ce que ça diagnostique — 11 modules + Recommandations
 
 | # | Module | Ce qui est analysé |
 |---|--------|--------------------|
@@ -15,14 +15,15 @@ Génère un **rapport HTML complet** (imprimable en PDF) en moins de 3 minutes.
 | 2 | Carte mère & BIOS/UEFI | Fabricant, modèle, **numéro de série**, UUID, version BIOS, date, UEFI vs Legacy |
 | 3 | Processeur (CPU) | Modèle, cœurs, fréquence max, température (seuils 75°C / 90°C) |
 | 4 | Mémoire vive (RAM) | Capacité, utilisation, barrettes détectées (slot, fréquence, fabricant) |
-| 5 | Test intégrité RAM | `memtester` 256 Mo — détecte les erreurs bit à bit en ~30s |
-| 6 | Disques (SMART + vitesse) | SSD/HDD/NVMe, santé SMART, secteurs réalloués, **température disque**, vitesse lecture séquentielle |
+| 5 | Test intégrité RAM | `memtester` dynamique (25% RAM libre, min 64 Mo, max 512 Mo) — détecte les erreurs bit à bit |
+| 6 | Disques (SMART + vitesse) | SSD/HDD/NVMe, santé SMART, secteurs réalloués, **heures de fonctionnement** (âge estimé), **température disque**, vitesse lecture séquentielle |
 | 7 | Carte graphique (GPU) | Modèle, température si accessible |
 | 8 | Stress-test CPU | 30s de charge totale — température max, delta thermique, **détection throttling** |
 | 9 | Batterie | Usure réelle vs capacité d'origine, cycles de charge (alertes >20% / >40%) |
 | 10 | Réseau / USB / Bluetooth | Interfaces réseau, Wi-Fi, Bluetooth, périphériques USB |
 | 11 | Table des partitions | Vue complète de la structure disque (`parted` ou `fdisk`) |
 | OS | Systèmes installés | Windows (version, build, Defender, **BitLocker**), Linux (distro, noyaux, journaux), macOS |
+| ★ | **Recommandations** | Section synthèse priorisée : URGENT / IMPORTANT / CONSEILLÉ / INFO |
 
 ---
 
@@ -57,9 +58,15 @@ chmod +x pc-diag.sh
 sudo ./pc-diag.sh
 ```
 
-Le rapport HTML s'ouvre automatiquement dans Firefox ou Chromium à la fin.
+Le rapport HTML s'ouvre automatiquement dans Firefox ou Chromium à la fin (si session graphique disponible).
 
-### 4. Exporter en PDF
+### 4. Récupérer les rapports
+
+Deux fichiers sont générés dans `./rapports/` :
+- `rapport_YYYYMMDD_HHMMSS.html` — rapport complet avec dark mode, imprimable en PDF
+- `rapport_YYYYMMDD_HHMMSS.txt` — résumé texte pour les archives de l'association
+
+### 5. Exporter en PDF
 
 Firefox → **Fichier > Imprimer > Enregistrer en PDF**
 
@@ -70,8 +77,10 @@ Firefox → **Fichier > Imprimer > Enregistrer en PDF**
 Le rapport HTML inclut :
 - Synthèse visuelle en 4 tuiles (OK / Attention / Critique / Info)
 - Code couleur par section avec badge de statut
+- **Section Recommandations** priorisée (URGENT → IMPORTANT → CONSEILLÉ → INFO)
 - Dark mode automatique selon le thème du navigateur
 - Compatible impression PDF (mise en page dédiée)
+- Export TXT parallèle pour les archives de l'association
 
 ---
 
@@ -83,7 +92,9 @@ Le rapport HTML inclut :
 
 **APFS (macOS récent)** — nécessite le pilote `apfs-fuse`, absent des distros live par défaut. La partition est détectée mais non montée.
 
-**Test mémoire complet** — `memtester` fait un test rapide (256 Mo, 1 passe). Pour une validation exhaustive (toute la RAM, plusieurs passes), lancer **memtest86+** depuis le menu Ventoy (compter 20 à 60 min).
+**Test mémoire complet** — `memtester` fait un test rapide (25% RAM disponible, 1 passe). Pour une validation exhaustive (toute la RAM, plusieurs passes), lancer **memtest86+** depuis le menu Ventoy (compter 20 à 60 min).
+
+**Session graphique** — si le diagnostic tourne en console pure (sans X11/Wayland), le navigateur ne s'ouvre pas automatiquement. Le rapport reste disponible dans `./rapports/`.
 
 ---
 
@@ -93,7 +104,7 @@ Toutes optionnelles — le script signale les outils absents et adapte le rappor
 
 | Outil | Usage | Paquet |
 |-------|-------|--------|
-| `smartmontools` | Santé SMART des disques | `smartmontools` |
+| `smartmontools` | Santé SMART des disques, heures de fonctionnement | `smartmontools` |
 | `dmidecode` | Infos carte mère, RAM, numéro de série | `dmidecode` |
 | `lm-sensors` | Températures CPU/GPU | `lm_sensors` |
 | `stress-ng` | Stress-test CPU | `stress-ng` |
