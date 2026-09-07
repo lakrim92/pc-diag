@@ -16,7 +16,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-VERSION="2.1"
+VERSION="3.0"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTDIR="${OUTDIR:-./rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
@@ -27,6 +27,15 @@ mkdir -p "$OUTDIR" "$MOUNT_ROOT"
 
 # Compteurs synthèse
 declare -i COUNT_OK=0 COUNT_WARN=0 COUNT_CRIT=0 COUNT_INFO=0
+
+# PIDs des processus de stress (nettoyage sur EXIT/INT/TERM)
+declare -a _STRESS_PIDS=()
+_cleanup() {
+    for _p in "${_STRESS_PIDS[@]:-}"; do
+        kill "$_p" 2>/dev/null || true
+    done
+}
+trap _cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # PRÉ-REQUIS
@@ -39,7 +48,7 @@ fi
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 MISSING_TOOLS=()
-for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget; do
+for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget memtester parted; do
     need_cmd "$_t" || MISSING_TOOLS+=("$_t")
 done
 
@@ -325,7 +334,15 @@ check_motherboard() {
     fi
 
     local mb_mfr mb_product mb_ver bios_vendor bios_ver bios_date uefi_mode status="ok"
+    local sys_mfr sys_product sys_serial sys_uuid
 
+    # Informations système (type 1 = System)
+    sys_mfr="$(    dmidecode -t 1 2>/dev/null | awk -F: '/Manufacturer:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
+    sys_product="$(dmidecode -t 1 2>/dev/null | awk -F: '/Product Name:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
+    sys_serial="$( dmidecode -t 1 2>/dev/null | awk -F: '/Serial Number:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
+    sys_uuid="$(   dmidecode -t 1 2>/dev/null | awk -F: '/UUID:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
+
+    # Informations carte mère (type 2 = Base Board)
     mb_mfr="$(    dmidecode -t 2 2>/dev/null | awk -F: '/Manufacturer:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
     mb_product="$(dmidecode -t 2 2>/dev/null | awk -F: '/Product Name:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
     mb_ver="$(    dmidecode -t 2 2>/dev/null | awk -F: '/^[[:space:]]*Version:/{gsub(/^[ \t]+/,"",$2);print $2;exit}')"
@@ -343,9 +360,13 @@ check_motherboard() {
 
     local content
     content="$(kv_open)
+    $(kv_row 'Fabricant système'      "${sys_mfr:-inconnu}")
+    $(kv_row 'Modèle système'         "${sys_product:-inconnu}")
+    $(kv_row 'Numéro de série'        "${sys_serial:-inconnu}")
+    $(kv_row 'UUID machine'           "${sys_uuid:-inconnu}")
     $(kv_row 'Fabricant carte mère'   "${mb_mfr:-inconnu}")
-    $(kv_row 'Modèle'                 "${mb_product:-inconnu}")
-    $(kv_row 'Révision'               "${mb_ver:-inconnu}")
+    $(kv_row 'Modèle carte mère'      "${mb_product:-inconnu}")
+    $(kv_row 'Révision carte mère'    "${mb_ver:-inconnu}")
     $(kv_row 'BIOS/UEFI — Éditeur'   "${bios_vendor:-inconnu}")
     $(kv_row 'BIOS/UEFI — Version'   "${bios_ver:-inconnu}")
     $(kv_row 'BIOS/UEFI — Date'      "${bios_date:-inconnue}")
@@ -450,7 +471,41 @@ check_ram() {
 }
 
 # ---------------------------------------------------------------------------
-# MODULE 5 — DISQUES (SMART + VITESSE)
+# MODULE 5 — TEST INTÉGRITÉ RAM (memtester rapide)
+# ---------------------------------------------------------------------------
+check_ram_test() {
+    if ! need_cmd memtester; then
+        add_section "Test intégrité RAM (rapide)" "info" \
+            "<p><code>memtester</code> absent — test actif non disponible.</p>
+             $(note 'Lancer <code>memtest86+</code> depuis le menu Ventoy pour un test complet (plusieurs passes, 20-60 min).')"
+        return
+    fi
+
+    local status="ok" content="" output="" errors=0
+    printf "  [memtester] Test rapide 256 Mo, 1 passe...\n"
+
+    output="$(memtester 256M 1 2>&1)" || true
+    errors="$(echo "$output" | grep -cE 'FAILURE|Error' 2>/dev/null)" || errors=0
+
+    content="$(kv_open)
+    $(kv_row 'Taille testée'     '256 Mo')
+    $(kv_row 'Nombre de passes'  '1')
+    $(kv_row 'Erreurs détectées' "${errors}")
+    $(kv_close)"
+
+    if [ "${errors}" -gt 0 ]; then
+        status="crit"
+        content+="<pre>$(echo "$output" | grep -E 'FAILURE|Error' | head -20 | html_escape)</pre>"
+        content+="$(warn_note 'Erreurs mémoire détectées. Tester les barrettes une par une pour isoler la défaillante. NE PAS remettre en service sans remplacement.')"
+    else
+        content+="$(note 'Test rapide passé sans erreur. Pour une validation complète (toute la RAM, plusieurs passes) : lancer memtest86+ depuis Ventoy.')"
+    fi
+
+    add_section "Test intégrité RAM (rapide)" "$status" "$content"
+}
+
+# ---------------------------------------------------------------------------
+# MODULE 6 — DISQUES (SMART + VITESSE)
 # ---------------------------------------------------------------------------
 check_disks() {
     local overall_status="ok" content=""
@@ -469,7 +524,7 @@ check_disks() {
     for d in $disks; do
         local dev="/dev/$d"
         local model size rotation type_label disk_status="info"
-        local health="Non vérifié" smart_block="" speed_block=""
+        local health="Non vérifié" smart_block="" speed_block="" disk_temp=""
 
         model="$(   lsblk -dno MODEL "$dev" 2>/dev/null | sed 's/ *$//')"
         size="$(    lsblk -dno SIZE  "$dev" 2>/dev/null)"
@@ -509,9 +564,34 @@ check_disks() {
                     disk_status="crit"
                 fi
 
-                smart_block="<pre>$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
-                    grep -E 'Reallocated|Pending|Uncorrect|Power_On|Wear_Level|Media_Wearout|Temperature|Load_Cycle' | \
-                    head -15 | html_escape)</pre>"
+                # Température disque (attribut SATA ou ligne NVMe)
+                disk_temp="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                             awk '/Temperature_Celsius|Airflow_Temperature_Cel/{print $10; exit}')"
+                [ -z "$disk_temp" ] && disk_temp="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                             awk '/^Temperature:/{print $2; exit}')"
+
+                # NVMe : spare + usure en plus des attributs classiques
+                if echo "$d" | grep -qi 'nvme'; then
+                    local nvme_spare nvme_used
+                    nvme_spare="$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                                  awk '/Available Spare:/{gsub(/%/,"",$3);print $3;exit}')"
+                    nvme_used="$( smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                                  awk '/Percentage Used:/{gsub(/%/,"",$3);print $3;exit}')"
+                    if [ -n "$nvme_spare" ] && [ "$nvme_spare" -lt 10 ]; then
+                        health="CRITIQUE — spare réservé <10% (${nvme_spare}%)"
+                        disk_status="crit"
+                    elif [ -n "$nvme_used" ] && [ "$nvme_used" -gt 90 ]; then
+                        health="ATTENTION — usure ${nvme_used}%"
+                        [ "$disk_status" = "ok" ] && disk_status="warn"
+                    fi
+                    smart_block="<pre>$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                        grep -E 'Temperature:|Available Spare:|Percentage Used:|Data Units Written:|Power On Hours:|Unsafe Shutdowns:' | \
+                        head -12 | html_escape)</pre>"
+                else
+                    smart_block="<pre>$(smartctl -A $smart_extra "$dev" 2>/dev/null | \
+                        grep -E 'Reallocated|Pending|Uncorrect|Power_On|Wear_Level|Media_Wearout|Temperature|Load_Cycle|Data_Read|Runtime_Bad' | \
+                        head -15 | html_escape)</pre>"
+                fi
             else
                 health="Non interrogeable (contrôleur RAID, USB ou VM)"
                 disk_status="warn"
@@ -548,9 +628,10 @@ check_disks() {
         content+="<div class='disk-head'>${dev} — ${model:-modèle inconnu}
                     <span class='badge badge-${disk_status}'>$(status_label "$disk_status")</span></div>
                   $(kv_open)
-                  $(kv_row 'Taille'       "${size:-?}")
-                  $(kv_row 'Type'         "$type_label")
-                  $(kv_row 'Santé SMART'  "$health")
+                  $(kv_row 'Taille'            "${size:-?}")
+                  $(kv_row 'Type'              "$type_label")
+                  $(kv_row 'Santé SMART'       "$health")
+                  $(kv_row 'Température'       "${disk_temp:+${disk_temp}°C}${disk_temp:-non disponible}")
                   $(kv_close)
                   ${speed_block}${smart_block}"
     done
@@ -622,23 +703,23 @@ check_stress_cpu() {
     printf "  [stress] Temp. initiale : %s°C — lancement %ds sur %d thread(s)...\n" \
            "$temp_before" "$duration" "$(nproc)"
 
-    # Lancement du générateur de charge
-    local stress_method="" stress_pids=()
+    # Lancement du générateur de charge (PIDs stockés globalement pour trap EXIT)
+    _STRESS_PIDS=()
+    local stress_method=""
     if need_cmd stress-ng; then
         stress_method="stress-ng"
         stress-ng --cpu "$(nproc)" --timeout "${duration}s" --quiet &
-        stress_pids=($!)
+        _STRESS_PIDS=($!)
     elif need_cmd stress; then
         stress_method="stress"
         stress --cpu "$(nproc)" --timeout "${duration}s" &
-        stress_pids=($!)
+        _STRESS_PIDS=($!)
     else
-        # Fallback shell natif : yes > /dev/null par thread
         stress_method="yes (fallback natif — stress-ng absent)"
         local _i
         for _i in $(seq 1 "$(nproc)"); do
-            yes > /dev/null &
-            stress_pids+=($!)
+            nice -n 19 yes > /dev/null &
+            _STRESS_PIDS+=($!)
         done
     fi
 
@@ -657,11 +738,12 @@ check_stress_cpu() {
         fi
     done
 
-    # Arrêt propre des processus de charge
-    for _pid in "${stress_pids[@]}"; do
+    # Arrêt propre via les PIDs globaux
+    for _pid in "${_STRESS_PIDS[@]}"; do
         kill "$_pid" 2>/dev/null || true
     done
-    wait "${stress_pids[@]}" 2>/dev/null || true
+    wait "${_STRESS_PIDS[@]}" 2>/dev/null || true
+    _STRESS_PIDS=()  # Nettoyé : le trap EXIT n'a plus rien à faire
 
     sleep 3
     local temp_after
@@ -792,6 +874,27 @@ check_peripherals() {
 }
 
 # ---------------------------------------------------------------------------
+# MODULE 11 — TABLE DES PARTITIONS
+# ---------------------------------------------------------------------------
+check_partitions() {
+    local content="" ptable=""
+
+    if need_cmd parted; then
+        ptable="$(parted -l 2>/dev/null)"
+    elif need_cmd fdisk; then
+        ptable="$(fdisk -l 2>/dev/null)"
+    fi
+
+    if [ -z "$ptable" ]; then
+        content="<p>Outils absents (<code>parted</code> ou <code>fdisk</code>) — table des partitions non lisible.</p>"
+    else
+        content="<pre>$(echo "$ptable" | html_escape)</pre>"
+    fi
+
+    add_section "Table des partitions" "info" "$content"
+}
+
+# ---------------------------------------------------------------------------
 # ANALYSE OS — WINDOWS
 # ---------------------------------------------------------------------------
 analyze_windows() {
@@ -827,26 +930,34 @@ analyze_windows() {
             [ -n "$install_ts" ] && \
                 install_date="$(date -d "@$install_ts" '+%d/%m/%Y' 2>/dev/null)"
 
-            # Windows Defender (ruche SYSTEM)
+            # Windows Defender + BitLocker (ruche SYSTEM)
             if [ -f "$hive_sys" ]; then
+                # Résolution dynamique du ControlSet actif (évite le bug ControlSet001 codé en dur)
+                local cs_num cs_path
+                cs_num="$(hivexget "$hive_sys" 'Select' Current 2>/dev/null)"
+                if [ -n "$cs_num" ] && [ "$cs_num" -gt 0 ] 2>/dev/null; then
+                    cs_path="$(printf 'ControlSet%03d\\Services' "$cs_num")"
+                else
+                    cs_path="ControlSet001\\Services"
+                fi
+
                 local def_start
-                def_start="$(hivexget "$hive_sys" \
-                              'ControlSet001\Services\WinDefend' Start 2>/dev/null)"
+                def_start="$(hivexget "$hive_sys" "${cs_path}\\WinDefend" Start 2>/dev/null)"
                 case "$def_start" in
                     2) defender_status="Activé (démarrage automatique)" ;;
                     3) defender_status="Manuel (potentiellement désactivé)" ;;
                     4) defender_status="Désactivé" ;;
+                    *) defender_status="Inconnu (clé non trouvée)" ;;
                 esac
 
-                # BitLocker (service BDESVC dans SYSTEM)
+                # BitLocker (service BDESVC)
                 local bde_start
-                bde_start="$(hivexget "$hive_sys" \
-                              'ControlSet001\Services\BDESVC' Start 2>/dev/null)"
+                bde_start="$(hivexget "$hive_sys" "${cs_path}\\BDESVC" Start 2>/dev/null)"
                 case "$bde_start" in
                     2) bl_status="Service actif (auto) — chiffrement probable" ;;
                     3) bl_status="Service manuel" ;;
                     4) bl_status="Service désactivé" ;;
-                    "") bl_status="Clé absente (BitLocker non installé)" ;;
+                    *) bl_status="Non installé ou clé absente" ;;
                 esac
             fi
 
@@ -1042,15 +1153,17 @@ main() {
 
     write_html_header
 
-    printf "  [1/9] Outils système\n"          ; check_tools
-    printf "  [2/9] Carte mère & BIOS\n"       ; check_motherboard
-    printf "  [3/9] Processeur (CPU)\n"        ; check_cpu
-    printf "  [4/9] Mémoire vive (RAM)\n"      ; check_ram
-    printf "  [5/9] Disques (SMART+vitesse)\n" ; check_disks
-    printf "  [6/9] Carte graphique\n"         ; check_gpu
-    printf "  [7/9] Stress-test CPU (30s)\n"   ; check_stress_cpu
-    printf "  [8/9] Batterie\n"                ; check_battery
-    printf "  [9/9] Réseau, USB, Bluetooth\n"  ; check_peripherals
+    printf "   [1/11] Outils système\n"               ; check_tools
+    printf "   [2/11] Carte mère & BIOS\n"            ; check_motherboard
+    printf "   [3/11] Processeur (CPU)\n"             ; check_cpu
+    printf "   [4/11] Mémoire vive (RAM)\n"           ; check_ram
+    printf "   [5/11] Test intégrité RAM (rapide)\n"  ; check_ram_test
+    printf "   [6/11] Disques (SMART+vitesse)\n"      ; check_disks
+    printf "   [7/11] Carte graphique\n"              ; check_gpu
+    printf "   [8/11] Stress-test CPU (30s)\n"        ; check_stress_cpu
+    printf "   [9/11] Batterie\n"                     ; check_battery
+    printf "  [10/11] Réseau, USB, Bluetooth\n"       ; check_peripherals
+    printf "  [11/11] Table des partitions\n"         ; check_partitions
     echo
     printf "  [OS]  Détection et analyse des systèmes installés...\n"
     detect_os_partitions
@@ -1076,8 +1189,17 @@ main() {
     echo "  Rapport : ${REPORT_FILE}"
     echo "  Résumé  : ${COUNT_OK} OK / ${COUNT_WARN} attention(s) / ${COUNT_CRIT} critique(s) / ${COUNT_INFO} info"
     echo
-    echo "  → Ouvrir dans Firefox, puis Fichier > Imprimer > Enregistrer en PDF"
+    echo "  → Imprimer en PDF : Firefox > Fichier > Imprimer > Enregistrer en PDF"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Ouverture automatique du rapport dans le navigateur disponible
+    for _browser in firefox chromium chromium-browser; do
+        if need_cmd "$_browser"; then
+            printf "\n  → Ouverture automatique dans %s...\n" "$_browser"
+            "$_browser" "$REPORT_FILE" >/dev/null 2>&1 &
+            break
+        fi
+    done
 }
 
 main "$@"
