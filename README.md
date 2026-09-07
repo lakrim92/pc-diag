@@ -37,38 +37,91 @@ Génère un **rapport HTML complet** (imprimable en PDF) + **export TXT** en moi
 
 ## Utilisation
 
-### 1. Démarrer sur la clé
+### 1. Démarrer sur la clé USB
 
-`F12` / `F2` / `Suppr` selon le constructeur → sélectionner la clé dans le menu Ventoy.
+Accéder au menu de démarrage avec `F12` / `F2` / `Suppr` selon le constructeur, puis sélectionner la clé USB.
 
-### 2. Installer les outils manquants (SystemRescue / Arch)
+Le menu **Ventoy** s'affiche → choisir **Normal Mode**.
 
-```bash
-pacman -Sy --noconfirm smartmontools dmidecode lm_sensors ntfs-3g hivex memtester
-sensors-detect --auto
-```
+Une deuxième page apparaît → appuyer sur **Entrée** sur l'option :
+> `Boot SystemRescue using default option`
 
-> Sur d'autres distros live (Ubuntu, Debian) : remplacer `pacman` par `apt-get install`.
+### 2. Lancer l'interface graphique
 
-### 3. Lancer le diagnostic
+Une fois le système démarré, une invite de commande apparaît. Taper :
 
 ```bash
-cd /run/media/*/<nom_clé>/outils/
-chmod +x pc-diag.sh
-sudo ./pc-diag.sh
+startx
 ```
 
-Le rapport HTML s'ouvre automatiquement dans Firefox ou Chromium à la fin (si session graphique disponible).
+L'environnement graphique XFCE démarre.
 
-### 4. Récupérer les rapports
+### 3. Régler le clavier en AZERTY (utilisateurs francophones)
 
-Deux fichiers sont générés dans `./rapports/` :
-- `rapport_YYYYMMDD_HHMMSS.html` — rapport complet avec dark mode, imprimable en PDF
-- `rapport_YYYYMMDD_HHMMSS.txt` — résumé texte pour les archives de l'association
+Dans le bureau XFCE : **Settings > Keyboard > Layout** → ajouter `French (AZERTY)` et supprimer la disposition par défaut.
 
-### 5. Exporter en PDF
+### 4. Monter la clé Ventoy
+
+Ouvrir un terminal et identifier le périphérique de la clé :
+
+```bash
+lsblk
+```
+
+La clé Ventoy apparaît généralement sous le nom `sda`, `sdb` ou `sdc`. La partition de données (FAT32, contenant les ISOs et le dossier `outils/`) est la **première partition** (ex. `sda1`).
+
+```bash
+mkdir -p /mnt/ventoy
+mount /dev/sda1 /mnt/ventoy   # Remplacer sda1 par le bon périphérique si nécessaire
+```
+
+> **Note** : si `sda1` n'est pas le bon périphérique, vérifier avec `lsblk` et adapter la commande.
+
+### 5. Copier et lancer le diagnostic
+
+```bash
+cp /mnt/ventoy/outils/pc-diag.sh ~/
+chmod +x ~/pc-diag.sh
+sudo ~/pc-diag.sh
+```
+
+Le diagnostic s'exécute et génère un rapport HTML dans `~/rapports/`.
+
+### 6. Consulter le rapport
+
+Une fois le diagnostic terminé, ouvrir **Firefox** et saisir dans la barre d'adresse :
+
+```
+file:///root/rapports/rapport_YYYYMMDD_HHMMSS.html
+```
+
+Remplacer `YYYYMMDD_HHMMSS` par l'horodatage affiché à la fin du diagnostic.
+
+### 7. Copier le rapport sur la clé USB
+
+Pour récupérer le rapport sur un autre poste, le copier sur la clé Ventoy :
+
+```bash
+cp ~/rapports/rapport_YYYYMMDD_HHMMSS.html /mnt/ventoy/
+```
+
+La clé Ventoy étant montée sur `/mnt/ventoy`, le fichier HTML sera accessible directement depuis la clé sur n'importe quel système.
+
+### 8. Redémarrer et exploiter le rapport
+
+Redémarrer le PC normalement, récupérer la clé USB et ouvrir le rapport HTML dans un navigateur.
+
+Pour l'archiver ou le transmettre au client :
 
 Firefox → **Fichier > Imprimer > Enregistrer en PDF**
+
+---
+
+## Fichiers générés
+
+Deux fichiers sont créés dans `~/rapports/` à chaque diagnostic :
+- `rapport_YYYYMMDD_HHMMSS.html` — rapport complet avec dark mode, imprimable en PDF
+- `rapport_YYYYMMDD_HHMMSS.txt` — résumé texte pour les archives de l'association
 
 ---
 
