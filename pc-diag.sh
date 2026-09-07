@@ -16,7 +16,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-VERSION="2.0"
+VERSION="2.1"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTDIR="${OUTDIR:-./rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
@@ -39,7 +39,7 @@ fi
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 MISSING_TOOLS=()
-for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd; do
+for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget; do
     need_cmd "$_t" || MISSING_TOOLS+=("$_t")
 done
 
@@ -589,7 +589,132 @@ check_gpu() {
 }
 
 # ---------------------------------------------------------------------------
-# MODULE 7 — BATTERIE
+# MODULE 7 — STRESS-TEST CPU
+# ---------------------------------------------------------------------------
+check_stress_cpu() {
+    local duration=30 content="" status="ok"
+
+    # Helper : lit la température CPU (sensors > /sys/thermal)
+    _cpu_temp() {
+        local t=""
+        if need_cmd sensors; then
+            t="$(sensors 2>/dev/null | \
+                 grep -Ei 'Package id 0|Tctl|Tdie|CPU Temp|temp1' | \
+                 grep -oE '[+-]?[0-9]+\.[0-9]+' | head -1)"
+        fi
+        if [ -z "$t" ] && [ -f /sys/class/thermal/thermal_zone0/temp ]; then
+            t="$(awk '{printf "%.1f",$1/1000}' \
+                 /sys/class/thermal/thermal_zone0/temp 2>/dev/null)"
+        fi
+        echo "$t"
+    }
+
+    local temp_before
+    temp_before="$(_cpu_temp)"
+
+    if [ -z "$temp_before" ]; then
+        add_section "Stress-test CPU" "info" \
+            "<p>Aucun capteur thermique accessible — test d'échauffement non réalisable
+             (<code>sensors</code> ou <code>/sys/class/thermal</code> requis).</p>"
+        return
+    fi
+
+    printf "  [stress] Temp. initiale : %s°C — lancement %ds sur %d thread(s)...\n" \
+           "$temp_before" "$duration" "$(nproc)"
+
+    # Lancement du générateur de charge
+    local stress_method="" stress_pids=()
+    if need_cmd stress-ng; then
+        stress_method="stress-ng"
+        stress-ng --cpu "$(nproc)" --timeout "${duration}s" --quiet &
+        stress_pids=($!)
+    elif need_cmd stress; then
+        stress_method="stress"
+        stress --cpu "$(nproc)" --timeout "${duration}s" &
+        stress_pids=($!)
+    else
+        # Fallback shell natif : yes > /dev/null par thread
+        stress_method="yes (fallback natif — stress-ng absent)"
+        local _i
+        for _i in $(seq 1 "$(nproc)"); do
+            yes > /dev/null &
+            stress_pids+=($!)
+        done
+    fi
+
+    # Monitoring pendant la durée du test
+    local temp_max="$temp_before"
+    local elapsed=0
+    while [ "$elapsed" -lt "$duration" ]; do
+        sleep 5
+        elapsed=$((elapsed + 5))
+        local t_now
+        t_now="$(_cpu_temp)"
+        if [ -n "$t_now" ]; then
+            num_gt "$t_now" "${temp_max:-0}" && temp_max="$t_now"
+            printf "  [stress] %02ds — %s°C  (max : %s°C)\n" \
+                   "$elapsed" "$t_now" "$temp_max"
+        fi
+    done
+
+    # Arrêt propre des processus de charge
+    for _pid in "${stress_pids[@]}"; do
+        kill "$_pid" 2>/dev/null || true
+    done
+    wait "${stress_pids[@]}" 2>/dev/null || true
+
+    sleep 3
+    local temp_after
+    temp_after="$(_cpu_temp)"
+
+    local delta=""
+    [ -n "$temp_before" ] && [ -n "$temp_max" ] && \
+        delta="$(awk -v b="$temp_before" -v m="$temp_max" \
+                 'BEGIN{printf "%.1f",m-b}')"
+
+    # Statut selon température maximale atteinte
+    num_gt "${temp_max:-0}" "90" && status="crit"
+    num_gt "${temp_max:-0}" "75" && num_lte "${temp_max:-0}" "90" && status="warn"
+
+    # Détection throttling (fréquence en fin de charge)
+    local throttle_line="non disponible"
+    if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq ]; then
+        local max_f cur_f throttle_pct
+        max_f="$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null)"
+        cur_f="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null)"
+        if [ -n "$max_f" ] && [ -n "$cur_f" ] && [ "$max_f" -gt 0 ]; then
+            throttle_pct="$(awk -v c="$cur_f" -v m="$max_f" \
+                            'BEGIN{printf "%.0f",(c/m)*100}')"
+            throttle_line="$(awk -v f="$cur_f" \
+                             'BEGIN{printf "%.0f MHz",f/1000}') (${throttle_pct}% du max)"
+            if [ "$throttle_pct" -lt 75 ]; then
+                throttle_line="${throttle_line} — THROTTLING DÉTECTÉ"
+                [ "$status" != "crit" ] && status="warn"
+            fi
+        fi
+    fi
+
+    content="$(kv_open)
+    $(kv_row 'Méthode stress'        "$stress_method")
+    $(kv_row 'Durée / Threads'       "${duration}s sur $(nproc) thread(s)")
+    $(kv_row 'Température initiale'  "${temp_before}°C")
+    $(kv_row 'Température maximale'  "${temp_max:+${temp_max}°C}${temp_max:-?}")
+    $(kv_row 'Température post-test' "${temp_after:+${temp_after}°C}${temp_after:-?}")
+    $(kv_row 'Delta (repos → max)'   "${delta:+${delta}°C}${delta:-?}")
+    $(kv_row 'Fréquence fin de test' "$throttle_line")
+    $(kv_close)"
+
+    case "$status" in
+        crit) content+="$(warn_note 'Température critique (>90°C) sous charge : pasta thermique défaillante ou refroidissement insuffisant — à traiter avant remise en service.')" ;;
+        warn) content+="$(warn_note 'Température élevée (>75°C) ou throttling détecté (<75% fréquence max) : nettoyage et remplacement pasta thermique conseillés.')" ;;
+        ok)   content+="$(note 'Comportement thermique correct sous charge totale — refroidissement en bon état.')" ;;
+    esac
+
+    add_section "Stress-test CPU (${duration}s charge totale)" "$status" "$content"
+}
+
+# ---------------------------------------------------------------------------
+# MODULE 8 — BATTERIE
 # ---------------------------------------------------------------------------
 check_battery() {
     local bat_path status="info"
@@ -683,23 +808,78 @@ analyze_windows() {
     $(kv_row 'Occupation disque' "${usage_pct:-?}%")
     $(kv_close)"
 
-    # Version Windows via hivex (si disponible)
-    if need_cmd hivexregedit && [ -f "$mp/Windows/System32/config/SOFTWARE" ]; then
-        local ver build
-        ver="$(  hivexregedit --export "$mp/Windows/System32/config/SOFTWARE" \
-                 'Microsoft\Windows NT\CurrentVersion' 2>/dev/null | \
-                 grep -i 'ProductName' | sed 's/.*= "//;s/".*//' | head -1)"
-        build="$(hivexregedit --export "$mp/Windows/System32/config/SOFTWARE" \
-                 'Microsoft\Windows NT\CurrentVersion' 2>/dev/null | \
-                 grep -i 'CurrentBuild' | sed 's/.*= "//;s/".*//' | head -1)"
+    # Lecture registre Windows hors-ligne via hivex
+    local hive_soft="$mp/Windows/System32/config/SOFTWARE"
+    local hive_sys="$mp/Windows/System32/config/SYSTEM"
+
+    if [ -f "$hive_soft" ]; then
+        local ver="" build="" ubr="" owner="" install_ts="" install_date=""
+        local defender_status="inconnu" bl_status="inconnu"
+        local nt_path="Microsoft\\Windows NT\\CurrentVersion"
+
+        if need_cmd hivexget; then
+            # hivexget : lecture directe d'une valeur (API la plus simple)
+            ver="$(          hivexget "$hive_soft" "$nt_path" ProductName      2>/dev/null | tr -d '"')"
+            build="$(        hivexget "$hive_soft" "$nt_path" CurrentBuild     2>/dev/null | tr -d '"')"
+            ubr="$(          hivexget "$hive_soft" "$nt_path" UBR              2>/dev/null)"
+            owner="$(        hivexget "$hive_soft" "$nt_path" RegisteredOwner  2>/dev/null | tr -d '"')"
+            install_ts="$(   hivexget "$hive_soft" "$nt_path" InstallDate      2>/dev/null)"
+            [ -n "$install_ts" ] && \
+                install_date="$(date -d "@$install_ts" '+%d/%m/%Y' 2>/dev/null)"
+
+            # Windows Defender (ruche SYSTEM)
+            if [ -f "$hive_sys" ]; then
+                local def_start
+                def_start="$(hivexget "$hive_sys" \
+                              'ControlSet001\Services\WinDefend' Start 2>/dev/null)"
+                case "$def_start" in
+                    2) defender_status="Activé (démarrage automatique)" ;;
+                    3) defender_status="Manuel (potentiellement désactivé)" ;;
+                    4) defender_status="Désactivé" ;;
+                esac
+
+                # BitLocker (service BDESVC dans SYSTEM)
+                local bde_start
+                bde_start="$(hivexget "$hive_sys" \
+                              'ControlSet001\Services\BDESVC' Start 2>/dev/null)"
+                case "$bde_start" in
+                    2) bl_status="Service actif (auto) — chiffrement probable" ;;
+                    3) bl_status="Service manuel" ;;
+                    4) bl_status="Service désactivé" ;;
+                    "") bl_status="Clé absente (BitLocker non installé)" ;;
+                esac
+            fi
+
+        elif need_cmd hivexregedit; then
+            # Fallback : export de la clé complète
+            local _hx_dump
+            _hx_dump="$(hivexregedit --export "$hive_soft" \
+                         'Microsoft\Windows NT\CurrentVersion' 2>/dev/null)"
+            ver="$(   echo "$_hx_dump" | grep -i 'ProductName'   | sed 's/.*= "//;s/".*//' | head -1)"
+            build="$( echo "$_hx_dump" | grep -i 'CurrentBuild'  | sed 's/.*= "//;s/".*//' | head -1)"
+            ubr="$(   echo "$_hx_dump" | grep -i '^"UBR"'        | grep -oE '[0-9]+$'       | head -1)"
+            owner="$( echo "$_hx_dump" | grep -i 'RegisteredOwner' | sed 's/.*= "//;s/".*//' | head -1)"
+        fi
+
         if [ -n "$ver" ]; then
             content+="$(kv_open)
-            $(kv_row 'Version Windows' "$ver")
-            $(kv_row 'Build'           "${build:-?}")
+            $(kv_row 'Version Windows'     "$ver")
+            $(kv_row 'Build'               "${build:-?}${ubr:+.${ubr}}")
+            $(kv_row 'Propriétaire'        "${owner:-inconnu}")
+            $(kv_row 'Date installation'   "${install_date:-inconnue}")
+            $(kv_row 'Windows Defender'    "$defender_status")
+            $(kv_row 'BitLocker (service)' "$bl_status")
             $(kv_close)"
+
+            echo "$bl_status" | grep -qi "actif\|probable" && {
+                content+="$(warn_note 'BitLocker potentiellement actif : certaines données peuvent être chiffrées — clé de récupération nécessaire pour analyse complète.')"
+                [ "$status" = "ok" ] && status="warn"
+            }
+        else
+            content+="$(note 'Ruches registre trouvées mais lecture échouée — hive peut-être verrouillé ou corrompu.')"
         fi
-    elif [ -f "$mp/Windows/System32/config/SOFTWARE" ]; then
-        content+="$(note 'Installer <code>hivex</code> pour lire la version exacte de Windows, l'\''état BitLocker et la licence.')"
+    else
+        content+="$(note 'Installer <code>hivex</code> (<code>hivexget</code>) pour lire version Windows, Defender, BitLocker et date d'\''installation hors-ligne.')"
     fi
 
     # Windows.old (place gaspillée)
@@ -862,14 +1042,15 @@ main() {
 
     write_html_header
 
-    printf "  [1/8] Outils système\n"       ; check_tools
-    printf "  [2/8] Carte mère & BIOS\n"    ; check_motherboard
-    printf "  [3/8] Processeur (CPU)\n"     ; check_cpu
-    printf "  [4/8] Mémoire vive (RAM)\n"   ; check_ram
-    printf "  [5/8] Disques (SMART+vitesse)\n"; check_disks
-    printf "  [6/8] Carte graphique\n"      ; check_gpu
-    printf "  [7/8] Batterie\n"             ; check_battery
-    printf "  [8/8] Réseau, USB, Bluetooth\n"; check_peripherals
+    printf "  [1/9] Outils système\n"          ; check_tools
+    printf "  [2/9] Carte mère & BIOS\n"       ; check_motherboard
+    printf "  [3/9] Processeur (CPU)\n"        ; check_cpu
+    printf "  [4/9] Mémoire vive (RAM)\n"      ; check_ram
+    printf "  [5/9] Disques (SMART+vitesse)\n" ; check_disks
+    printf "  [6/9] Carte graphique\n"         ; check_gpu
+    printf "  [7/9] Stress-test CPU (30s)\n"   ; check_stress_cpu
+    printf "  [8/9] Batterie\n"                ; check_battery
+    printf "  [9/9] Réseau, USB, Bluetooth\n"  ; check_peripherals
     echo
     printf "  [OS]  Détection et analyse des systèmes installés...\n"
     detect_os_partitions
