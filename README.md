@@ -96,6 +96,16 @@ Le rapport HTML inclut :
 
 **Session graphique** — si le diagnostic tourne en console pure (sans X11/Wayland), le navigateur ne s'ouvre pas automatiquement. Le rapport reste disponible dans `./rapports/`.
 
+**Environnement virtuel (VM / cloud)** — les disques virtuels (`vda`, `vdb`, `vdc`...) ne supportent pas SMART. Le diagnostic matériel reste partiel ; l'analyse OS fonctionne normalement.
+
+**Outils réseau / PCI / USB absents** — `lspci`, `lsusb` et `ip` sont pré-installés sur SystemRescue mais peuvent manquer sur d'autres live CD. Les installer si besoin :
+```bash
+# Arch/SystemRescue
+pacman -Sy --noconfirm pciutils usbutils iproute2
+# Debian/Ubuntu live
+apt-get install -y pciutils usbutils iproute2
+```
+
 ---
 
 ## Dépendances
