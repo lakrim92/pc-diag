@@ -18,7 +18,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 VERSION="4.1"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-OUTDIR="${OUTDIR:-./rapports}"
+OUTDIR="${OUTDIR:-/root/rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
 REPORT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.html"
 TXT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.txt"
@@ -62,6 +62,16 @@ MISSING_TOOLS=()
 for _t in lsblk smartctl lscpu free lspci lsusb dmidecode sensors ip dd stress-ng hivexget memtester parted nvme; do
     need_cmd "$_t" || MISSING_TOOLS+=("$_t")
 done
+
+if need_cmd pacman; then
+    PKG_CMD="pacman -Sy --noconfirm"
+elif need_cmd apt-get; then
+    PKG_CMD="apt-get install -y"
+elif need_cmd dnf; then
+    PKG_CMD="dnf install -y"
+else
+    PKG_CMD=""
+fi
 
 # ---------------------------------------------------------------------------
 # UTILITAIRES HTML
@@ -325,9 +335,15 @@ check_tools() {
     if [ "${#MISSING_TOOLS[@]}" -gt 0 ]; then
         local list="${MISSING_TOOLS[*]}"
         list="${list// /, }"
+        local pkg_note
+        if [ -n "$PKG_CMD" ]; then
+            pkg_note="$(note "Installer les outils manquants : <code>${PKG_CMD} smartmontools dmidecode lm_sensors ntfs-3g hivex</code>")"
+        else
+            pkg_note="$(note 'Gestionnaire de paquets non détecté — installer manuellement les outils manquants.')"
+        fi
         add_section "Outils système" "warn" \
             "<p>Outils absents (tests concernés limités) : <code>${list}</code></p>
-             $(note 'Sur SystemRescue : <code>pacman -Sy --noconfirm smartmontools dmidecode lm_sensors ntfs-3g hivex</code>')"
+             ${pkg_note}"
     else
         add_section "Outils système" "ok" \
             "<p>Tous les outils de diagnostic sont disponibles.</p>"
@@ -773,7 +789,7 @@ check_disks() {
         # Vitesse de lecture séquentielle (safe: read-only, limité à 512 Mo)
         if need_cmd dd; then
             local dd_out speed_str=""
-            dd_out="$(dd if="$dev" of=/dev/null bs=4M count=128 iflag=direct 2>&1)" || true
+            dd_out="$(timeout 60 dd if="$dev" of=/dev/null bs=4M count=128 iflag=direct 2>&1)" || true
             speed_str="$(echo "$dd_out" | grep -oE '[0-9]+(\.[0-9]+)? (MB|GB)/s' | head -1)"
 
             if [ -n "$speed_str" ]; then
