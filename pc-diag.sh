@@ -1445,6 +1445,68 @@ write_txt_summary() {
 }
 
 # ---------------------------------------------------------------------------
+# COPIE DU RAPPORT SUR LA CLÉ USB
+# ---------------------------------------------------------------------------
+# Détecte le point de montage Ventoy/USB et y copie les rapports HTML+TXT.
+# Override possible : USB_RAPPORTS_DIR=/chemin/vers/dossier sudo ./pc-diag.sh
+detect_usb_mount() {
+    # 1. Override explicite
+    if [ -n "${USB_RAPPORTS_DIR:-}" ]; then
+        echo "$USB_RAPPORTS_DIR"
+        return
+    fi
+
+    # 2. Points de montage Ventoy courants
+    for _mp in /mnt/ventoy /run/archiso/bootmnt /media/ventoy; do
+        if mountpoint -q "$_mp" 2>/dev/null && [ -w "$_mp" ]; then
+            echo "${_mp}/rapports"
+            return
+        fi
+    done
+
+    # 3. Fallback : premier FS FAT/exFAT monté rw sur un périphérique amovible
+    while read -r _dev _mp _fs _opts _rest; do
+        [[ "$_fs" =~ ^(vfat|fat|exfat|msdos)$ ]] || continue
+        [[ "$_opts" == *rw* ]]                    || continue
+        [[ "$_mp"  =~ ^/(proc|sys|dev|run|tmp) ]] && continue
+        local _bdev
+        _bdev="$(basename "$_dev")"
+        # Remonter au disque parent (sdb1 → sdb) pour lire removable
+        local _parent="${_bdev%%[0-9]*}"
+        local _removable="/sys/class/block/${_parent}/removable"
+        [ "$(cat "$_removable" 2>/dev/null)" = "1" ] || continue
+        echo "${_mp}/rapports"
+        return
+    done < /proc/mounts
+}
+
+copy_report_to_usb() {
+    local usb_dir
+    usb_dir="$(detect_usb_mount)"
+
+    if [ -z "$usb_dir" ]; then
+        printf "  ⚠ Clé USB non détectée — rapport uniquement dans %s\n" "$OUTDIR"
+        printf "    (monter la clé puis : cp '%s' /mnt/ventoy/rapports/)\n" "$REPORT_FILE"
+        return
+    fi
+
+    if ! mkdir -p "$usb_dir" 2>/dev/null; then
+        printf "  ⚠ Impossible de créer %s (clé en lecture seule ?)\n" "$usb_dir"
+        return
+    fi
+
+    local ok=true
+    cp "$REPORT_FILE" "$usb_dir/" 2>/dev/null || ok=false
+    cp "$TXT_FILE"    "$usb_dir/" 2>/dev/null || ok=false
+
+    if $ok; then
+        printf "  Copie USB  : %s/\n" "$usb_dir"
+    else
+        printf "  ⚠ Copie partielle vers %s — vérifier l'espace disponible\n" "$usb_dir"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # ORCHESTRATION
 # ---------------------------------------------------------------------------
 main() {
@@ -1496,6 +1558,7 @@ main() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     write_txt_summary
+    copy_report_to_usb
 
     # Ouverture automatique du rapport uniquement si session graphique disponible
     if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
