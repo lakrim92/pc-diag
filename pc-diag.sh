@@ -877,24 +877,75 @@ check_disks() {
 # MODULE 6 — CARTE GRAPHIQUE
 # ---------------------------------------------------------------------------
 check_gpu() {
-    local gpu_info="" gpu_temp="" content
+    local gpu_info="" gpu_temp="" driver_info="" content rows=""
 
+    # Détection GPU via lspci
     if need_cmd lspci; then
         gpu_info="$(lspci 2>/dev/null | grep -Ei 'vga|3d controller|display controller' | \
                     sed 's/^[0-9a-f:.]* //')"
     fi
 
+    # Driver(s) kernel chargé(s)
+    if need_cmd lsmod; then
+        driver_info="$(lsmod 2>/dev/null | awk '{print $1}' | \
+                       grep -E '^(nvidia|amdgpu|i915|nouveau|radeon)$' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+    fi
+
+    # Température via sensors (AMD edge/junction, générique GPU)
     if need_cmd sensors; then
         gpu_temp="$(sensors 2>/dev/null | grep -Ei 'GPU|edge|junction' | \
                     grep -oE '[+-]?[0-9]+\.[0-9]+°C' | head -1)"
     fi
 
+    # Fréquence courante GPU Intel intégré (sysfs)
+    local intel_freq=""
+    for _f in /sys/class/drm/card*/gt_cur_freq_mhz; do
+        [ -f "$_f" ] || continue
+        intel_freq="$(cat "$_f" 2>/dev/null) MHz"
+        break
+    done
+
+    # --- Construction du contenu ---
     if [ -z "$gpu_info" ]; then
-        content="<p>Aucun GPU détecté via lspci (outil absent, GPU intégré, ou VM).</p>"
+        content="<p>Aucun GPU détecté via lspci (outil absent, GPU intégré non listé, ou VM).</p>"
     else
         content="<pre>$(echo "$gpu_info" | html_escape)</pre>"
-        if [ -n "$gpu_temp" ]; then
-            content+="$(kv_open)$(kv_row 'Température GPU' "$gpu_temp")$(kv_close)"
+
+        rows=""
+        [ -n "$driver_info" ] && rows+="$(kv_row 'Driver(s) chargé(s)' "$driver_info")"
+        [ -n "$gpu_temp"    ] && rows+="$(kv_row 'Température'          "$gpu_temp")"
+        [ -n "$intel_freq"  ] && rows+="$(kv_row 'Fréq. Intel GPU'      "$intel_freq")"
+        [ -n "$rows"        ] && content+="$(kv_open)${rows}$(kv_close)"
+    fi
+
+    # NVIDIA — nvidia-smi (température précise, VRAM, driver, utilisation)
+    if need_cmd nvidia-smi; then
+        local nv_raw
+        nv_raw="$(nvidia-smi \
+                    --query-gpu=name,driver_version,temperature.gpu,memory.used,memory.total,utilization.gpu \
+                    --format=csv,noheader,nounits 2>/dev/null)" || true
+        if [ -n "$nv_raw" ]; then
+            content+="<p><strong>NVIDIA — nvidia-smi :</strong></p>"
+            content+='<table class="kv"><tr>'
+            content+='<th>GPU</th><th>Driver</th><th>Temp.</th><th>VRAM utilisée</th><th>VRAM totale</th><th>Charge</th>'
+            content+='</tr>'
+            while IFS=',' read -r _name _drv _temp _mu _mt _util; do
+                _name="$(echo "$_name" | xargs)"
+                _drv="$( echo "$_drv"  | xargs)"
+                _temp="$(echo "$_temp" | xargs)"
+                _mu="$(  echo "$_mu"   | xargs)"
+                _mt="$(  echo "$_mt"   | xargs)"
+                _util="$(echo "$_util" | xargs)"
+                content+="<tr>"
+                content+="<td>$(printf '%s' "$_name" | html_escape)</td>"
+                content+="<td>${_drv}</td>"
+                content+="<td>${_temp} °C</td>"
+                content+="<td>${_mu} MiB</td>"
+                content+="<td>${_mt} MiB</td>"
+                content+="<td>${_util} %</td>"
+                content+="</tr>"
+            done <<< "$nv_raw"
+            content+="</table>"
         fi
     fi
 

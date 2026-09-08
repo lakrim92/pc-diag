@@ -49,14 +49,15 @@ fi
 
 ---
 
-## 4. Module GPU trop limité
+## 4. Module GPU trop limité ✅ corrigé
 
 **Fichier :** `pc-diag.sh` fonction `check_gpu`  
-**Problème :** Le module se limite à un `lspci` — pas de VRAM, pas de driver chargé, pas de température NVIDIA via `nvidia-smi`.  
-**Améliorations possibles :**
-- Ajouter `nvidia-smi` si disponible (température, VRAM utilisée, driver)
-- Lire `/sys/class/drm/*/gt_cur_freq_mhz` pour les GPU Intel intégrés
-- Détecter le driver chargé via `lsmod | grep -E 'nvidia|amdgpu|i915|nouveau'`
+**Problème initial :** Le module se limitait à un `lspci` — pas de VRAM, pas de driver chargé, pas de température NVIDIA.  
+**Corrections apportées :**
+- Driver kernel chargé : `lsmod` filtré sur `nvidia`, `amdgpu`, `i915`, `nouveau`, `radeon`
+- Température AMD/générique : `sensors` sur les capteurs `edge`/`junction`/`GPU`
+- GPU Intel intégré : fréquence courante lue dans `/sys/class/drm/card*/gt_cur_freq_mhz`
+- GPU NVIDIA : tableau complet via `nvidia-smi` — nom, version driver, température, VRAM utilisée/totale, charge GPU (%)
 
 ---
 
@@ -186,11 +187,11 @@ L'ISO n'a pas à être reconstruite.
 
 ## Résumé des priorités
 
-| # | Priorité | Effort | Impact |
-|---|----------|--------|--------|
-| 1 | Haute    | Faible | Évite blocage sur disque défaillant |
-| 2 | Haute    | Faible | Rapport toujours dans `/root/rapports/` |
-| 3 | Moyenne  | Faible | Note d'aide correcte quelle que soit la distro |
-| 6 | Haute    | Moyen  | Clé opérationnelle immédiatement, usage intensif |
-| 4 | Basse    | Élevé  | Meilleur diagnostic GPU |
-| 5 | Basse    | Moyen  | Sécurité clé USB partagée |
+| # | Priorité | Effort | Impact | Statut |
+|---|----------|--------|--------|--------|
+| 1 | Haute    | Faible | Évite blocage sur disque défaillant | ✅ |
+| 2 | Haute    | Faible | Rapport toujours dans `/root/rapports/` | ✅ |
+| 3 | Moyenne  | Faible | Note d'aide correcte quelle que soit la distro | ✅ |
+| 5 | Basse    | Moyen  | Sécurité clé USB partagée | ✅ |
+| 6 | Haute    | Moyen  | Clé opérationnelle immédiatement, usage intensif | ✅ |
+| 4 | Basse    | Élevé  | Meilleur diagnostic GPU | ✅ |
