@@ -1,0 +1,22 @@
+# Configuration sysrescue-customize pour pc-diag
+# Ajoute tous les outils nécessaires à l'ISO SystemRescue.
+# Référence : https://www.system-rescue.org/manual/Customizing_SystemRescue/
+
+packages:
+  # Diagnostic disque
+  - smartmontools
+  - nvme-cli
+  # Infos matérielles
+  - dmidecode
+  # Capteurs température / voltage
+  - lm_sensors
+  # NTFS (montage partitions Windows)
+  - ntfs-3g
+  # Registre Windows (analyse offline)
+  - hivex
+  # Test RAM
+  - memtester
+  # Stress-test CPU/IO
+  - stress-ng
+  # Partitionnement
+  - parted

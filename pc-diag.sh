@@ -53,6 +53,41 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Vérification d'intégrité SHA256 (optionnelle — ne bloque que si le fichier
+# .sha256 existe et que le hash ne correspond pas).
+_check_integrity() {
+    local script_real
+    script_real="$(realpath "$0" 2>/dev/null || echo "$0")"
+    local script_dir
+    script_dir="$(dirname "$script_real")"
+
+    local hash_file=""
+    for _candidate in \
+        "${script_dir}/pc-diag.sh.sha256" \
+        "/mnt/ventoy/outils/pc-diag.sh.sha256" \
+        "/run/archiso/bootmnt/outils/pc-diag.sh.sha256"
+    do
+        [ -f "$_candidate" ] && { hash_file="$_candidate"; break; }
+    done
+
+    [ -z "$hash_file" ] && return 0   # pas de fichier → vérification ignorée
+
+    local expected actual
+    expected="$(awk '{print $1}' "$hash_file")"
+    actual="$(sha256sum "$script_real" | awk '{print $1}')"
+
+    if [ "$expected" != "$actual" ]; then
+        printf "\n⚠  INTÉGRITÉ DU SCRIPT NON VÉRIFIÉE\n"
+        printf "   Attendu  : %s\n" "$expected"
+        printf "   Calculé  : %s\n" "$actual"
+        printf "   Source   : %s\n\n" "$hash_file"
+        printf "   Le script a peut-être été modifié ou corrompu.\n"
+        printf "   Appuyer sur Entrée pour continuer quand même, ou Ctrl+C pour annuler : "
+        read -r
+    fi
+}
+_check_integrity
+
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 # Format a value with unit, or a fallback string if the value is empty
