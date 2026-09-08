@@ -472,7 +472,9 @@ check_cpu() {
     temp="non disponible"
     if need_cmd sensors; then
         # Initialisation silencieuse (évite un blocage)
-        need_cmd sensors-detect && timeout 10 sensors-detect --auto >/dev/null 2>&1 || true
+        if need_cmd sensors-detect; then
+            timeout 10 sensors-detect --auto >/dev/null 2>&1 || true
+        fi
         local raw_temp
         raw_temp="$(sensors 2>/dev/null | grep -Ei 'Package id 0|Tctl|Tdie|CPU Temp|temp1' | \
                     grep -oE '[+-]?[0-9]+\.[0-9]+°C' | head -1)"
@@ -583,7 +585,7 @@ check_ram_test() {
     printf "  [memtester] Test rapide %d Mo, 1 passe...\n" "$test_mb"
 
     output="$(memtester "${test_mb}M" 1 2>&1)" || true
-    errors="$(echo "$output" | grep -E 'FAILURE|Error' 2>/dev/null | wc -l)" || errors=0
+    errors="$(echo "$output" | grep -c -E 'FAILURE|Error' 2>/dev/null)" || errors=0
 
     content="$(kv_open)
     $(kv_row 'Taille testée'     "${test_mb} Mo (25% RAM disponible)")
@@ -1159,7 +1161,7 @@ check_peripherals() {
     [ -z "$bt_info" ] && bt_info="Aucun contrôleur Bluetooth détecté"
 
     content="<p><strong>Interfaces réseau :</strong></p>
-    <pre>$([ -n "$net_info" ] && echo "$net_info" || echo "aucune"  | html_escape)</pre>
+    <pre>$([ -n "$net_info" ] && echo "$net_info" | html_escape || echo "aucune")</pre>
     <p><strong>Wi-Fi / Ethernet (PCI) :</strong></p>
     <pre>$([ -n "$wifi_info" ] && echo "$wifi_info" | html_escape || echo "non détecté ou lspci absent")</pre>
     <p><strong>Bluetooth :</strong></p>
@@ -1341,10 +1343,10 @@ analyze_linux() {
     [ -f "$mp/etc/os-release" ] && \
         distro="$(grep -E '^PRETTY_NAME=' "$mp/etc/os-release" | cut -d= -f2 | tr -d '"')"
 
-    kernels="$(ls "$mp/boot" 2>/dev/null | grep -E '^vmlinuz' | sort -V | tr '\n' ' ')"
+    kernels="$(find "$mp/boot" -maxdepth 1 -name 'vmlinuz*' -printf '%f\n' 2>/dev/null | sort -V | tr '\n' ' ')"
 
     if [ -d "$mp/var/lib/dpkg/info" ]; then
-        pkg_count="$(ls "$mp/var/lib/dpkg/info" 2>/dev/null | grep -c '\.list$') paquets (APT)"
+        pkg_count="$(find "$mp/var/lib/dpkg/info" -maxdepth 1 -name '*.list' 2>/dev/null | wc -l) paquets (APT)"
     elif [ -d "$mp/var/lib/rpm" ]; then
         pkg_count="$(find "$mp/var/lib/rpm" -maxdepth 1 -name '*.db' 2>/dev/null | wc -l) bases RPM"
     fi
