@@ -81,9 +81,12 @@ sha256sum -c /mnt/ventoy/outils/pc-diag.sh.sha256 2>/dev/null || {
 **Solution :** Générer une ISO SystemRescue personnalisée avec tous les outils pré-intégrés via `sysrescue-customize` (outil officiel).
 
 Les fichiers nécessaires sont déjà présents dans ce dépôt :
-- `build/sysrescue-custom.yaml` — liste des paquets
-- `build/build-iso.sh` — script de build (pilote Docker)
+- `build/packages.txt` — liste des paquets pacman à intégrer
+- `build/build-srm.sh` — construit le module SRM (installe les paquets dans un conteneur Arch Linux jetable, récupère uniquement les fichiers des paquets nouvellement installés)
+- `build/build-iso.sh` — pilote le build complet : appelle `build-srm.sh` puis exécute l'outil officiel `sysrescue-customize` (téléchargé à la volée) dans un conteneur Debian pour recompresser l'ISO avec le module SRM intégré
 - `update-hash.sh` — régénère le hash SHA256 après mise à jour du script
+
+Le chargement du module au démarrage (`loadsrm`) est activé automatiquement par `sysrescue-customize`, aucune action manuelle n'est requise sur la clé.
 
 ---
 
@@ -120,7 +123,7 @@ cd build/
 Le script génère `systemrescue-pcdiag.iso` dans le répertoire courant.  
 Durée estimée : 5 à 15 minutes selon la connexion (téléchargement des paquets par Docker).
 
-Paquets intégrés (`build/sysrescue-custom.yaml`) :
+Paquets intégrés (`build/packages.txt`) :
 
 | Paquet | Rôle |
 |---|---|

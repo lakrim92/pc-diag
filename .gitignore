@@ -1,2 +1,4 @@
 rapports/
 *.tmp
+*.iso
+build/recipe-dir/

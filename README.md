@@ -77,6 +77,12 @@ mount /dev/sda1 /mnt/ventoy   # Remplacer sda1 par le bon périphérique si néc
 
 > **Note** : si `sda1` n'est pas le bon périphérique, vérifier avec `lsblk` et adapter la commande.
 
+> **Si le montage échoue** avec une erreur du type `mount: /mnt/ventoy: fsconfig system call failed: /dev/sda1: Can't open blockdev` : c'est normal sur certaines clés Ventoy — Ventoy protège sa partition de données derrière un périphérique **device-mapper** pendant le boot. Vérifier avec `lsblk` (une ligne `ventoy` de type `dm` apparaît sous `sda`) et monter ce périphérique à la place :
+>
+> ```bash
+> mount /dev/mapper/ventoy /mnt/ventoy
+> ```
+
 ### 5. Copier et lancer le diagnostic
 
 ```bash
@@ -85,7 +91,7 @@ chmod +x ~/pc-diag.sh
 sudo ~/pc-diag.sh
 ```
 
-Le diagnostic s'exécute et génère un rapport HTML dans `~/rapports/`.
+Le diagnostic s'exécute et génère un rapport HTML dans `~/rapports/`. À la fin, il **copie automatiquement** le HTML et le TXT sur la clé (voir étape 7) s'il détecte un point de montage Ventoy en écriture (`/mnt/ventoy` en priorité).
 
 ### 6. Consulter le rapport
 
@@ -97,15 +103,17 @@ file:///root/rapports/rapport_YYYYMMDD_HHMMSS.html
 
 Remplacer `YYYYMMDD_HHMMSS` par l'horodatage affiché à la fin du diagnostic.
 
-### 7. Copier le rapport sur la clé USB
+### 7. Récupérer le rapport sur la clé USB
 
-Pour récupérer le rapport sur un autre poste, le copier sur la clé Ventoy :
+**C'est automatique** : si la clé est montée sur `/mnt/ventoy` (ou `/run/archiso/bootmnt` / `/media/ventoy`) avant la fin du diagnostic, le script y copie déjà le HTML et le TXT, dans le dossier **`rapports/` à la racine de la clé** (ex. `/mnt/ventoy/rapports/rapport_YYYYMMDD_HHMMSS.html`) — pas dans `outils/rapports/`.
+
+Le terminal affiche `Copie USB : /mnt/ventoy/rapports/` en fin d'exécution pour confirmer.
+
+Si la clé n'était pas montée au moment du diagnostic (ou sur un point de montage non standard), le script l'indique avec la commande de copie manuelle à utiliser :
 
 ```bash
-cp ~/rapports/rapport_YYYYMMDD_HHMMSS.html /mnt/ventoy/
+cp ~/rapports/rapport_YYYYMMDD_HHMMSS.html ~/rapports/rapport_YYYYMMDD_HHMMSS.txt /mnt/ventoy/rapports/
 ```
-
-La clé Ventoy étant montée sur `/mnt/ventoy`, le fichier HTML sera accessible directement depuis la clé sur n'importe quel système.
 
 ### 8. Redémarrer et exploiter le rapport
 
@@ -119,7 +127,7 @@ Firefox → **Fichier > Imprimer > Enregistrer en PDF**
 
 ## Fichiers générés
 
-Deux fichiers sont créés dans `~/rapports/` à chaque diagnostic :
+Deux fichiers sont créés dans `~/rapports/` (environnement live, perdu au redémarrage) et copiés automatiquement dans `rapports/` à la racine de la clé Ventoy (persistant) si celle-ci est montée :
 - `rapport_YYYYMMDD_HHMMSS.html` — rapport complet avec dark mode, imprimable en PDF
 - `rapport_YYYYMMDD_HHMMSS.txt` — résumé texte pour les archives de l'association
 
@@ -134,6 +142,14 @@ Le rapport HTML inclut :
 - Dark mode automatique selon le thème du navigateur
 - Compatible impression PDF (mise en page dédiée)
 - Export TXT parallèle pour les archives de l'association
+
+---
+
+## Dépannage
+
+**Le menu Ventoy affiche l'ISO en double** — Ventoy scanne toute la partition à la recherche de fichiers `.iso`, y compris les dossiers cachés. Si une ancienne version de l'ISO traîne dans la corbeille de la clé (`.Trash-1000/files/`, visible/vidable depuis un gestionnaire de fichiers Linux), elle apparaît comme un second choix de boot. Vider la corbeille de la clé pour n'avoir plus qu'une seule entrée.
+
+**`mount /dev/sda1` échoue avec `Can't open blockdev`** — voir l'étape 4 : utiliser `/dev/mapper/ventoy` à la place.
 
 ---
 
