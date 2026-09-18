@@ -1,0 +1,633 @@
+<title>PC-DIAG Pro — Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --accent:    #0F766E;
+  --accent-lt: #CCFBF1;
+  --txt:       #0F172A;
+  --txt-2:     #475569;
+  --border:    #CBD5E1;
+  --surface:   #FFFFFF;
+  --bg:        #F1F5F9;
+  --ok:        #15803D;
+  --ok-lt:     #DCFCE7;
+  --warn:      #B45309;
+  --warn-lt:   #FEF3C7;
+  --crit:      #B91C1C;
+  --crit-lt:   #FEE2E2;
+  --info:      #1D4ED8;
+  --info-lt:   #DBEAFE;
+  --code-bg:   #0F172A;
+  --code-txt:  #CBD5E1;
+  --mono: 'IBM Plex Mono', 'Fira Code', monospace;
+  --serif: 'DM Serif Display', Georgia, serif;
+  --sans: 'DM Sans', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --txt:      #E2E8F0; --txt-2: #94A3B8; --border: #334155;
+    --surface:  #1E293B; --bg:    #0F172A; --accent-lt: #134E4A;
+    --ok-lt:    #052E16; --warn-lt: #28200A; --crit-lt: #2D0A0A; --info-lt: #0A1A3A;
+  }
+}
+:root[data-theme="dark"] {
+  --txt:      #E2E8F0; --txt-2: #94A3B8; --border: #334155;
+  --surface:  #1E293B; --bg:    #0F172A; --accent-lt: #134E4A;
+  --ok-lt:    #052E16; --warn-lt: #28200A; --crit-lt: #2D0A0A; --info-lt: #0A1A3A;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--txt); font-family: var(--sans); font-size: 1rem; line-height: 1.7; }
+
+.page { max-width: 800px; margin: 0 auto; padding-inline: 20px; padding-block: 0 80px; }
+
+/* Cover */
+.cover { background: var(--accent); color: #fff; padding: 52px 40px; border-radius: 16px; margin-bottom: 48px; }
+.cover-eyebrow { font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .7; margin-bottom: 12px; }
+.cover h1 { font-family: var(--serif); font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 12px; text-wrap: balance; }
+.cover h1 em { font-style: italic; opacity: .85; }
+.cover-sub { font-size: .95rem; opacity: .8; max-width: 500px; margin-bottom: 24px; }
+.cover-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: .78rem; opacity: .6; font-family: var(--mono); }
+
+/* TOC */
+.toc { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px 28px; margin-bottom: 48px; }
+.toc h2 { font-family: var(--serif); font-size: 1rem; margin: 0 0 12px; }
+.toc ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.toc li { font-size: .86rem; color: var(--txt-2); }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.toc .sub { margin-top: 4px; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; list-style: disc; }
+
+/* Sections */
+.section { margin-bottom: 56px; scroll-margin-top: 16px; }
+.section-num { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; font-family: var(--mono); }
+h2 { font-family: var(--serif); font-size: clamp(1.3rem, 3vw, 1.75rem); line-height: 1.2; margin: 0 0 18px; text-wrap: balance; }
+h3 { font-size: .95rem; font-weight: 600; margin: 24px 0 8px; }
+p { margin: 0 0 12px; color: var(--txt-2); }
+ul, ol { margin: 0 0 12px; padding-left: 22px; color: var(--txt-2); }
+li { margin-bottom: 5px; font-size: .9rem; }
+
+/* Code */
+.code-block { background: var(--code-bg); border-radius: 10px; overflow: hidden; margin: 14px 0; }
+.code-label { background: #1E293B; padding: 7px 16px; font-family: var(--mono); font-size: .67rem; color: #64748B; letter-spacing: .06em; }
+.code-body { padding: 13px 18px; font-family: var(--mono); font-size: .8rem; color: var(--code-txt); line-height: 1.85; overflow-x: auto; }
+.code-body .c { color: #475569; }
+.code-body .v { color: #FCD34D; }
+.code-body .s { color: #34D399; }
+.code-body .k { color: #93C5FD; }
+code { font-family: var(--mono); font-size: .84em; background: var(--accent-lt); color: var(--accent); padding: 2px 5px; border-radius: 3px; }
+
+/* Callouts */
+.callout { border-radius: 8px; padding: 12px 16px; margin: 14px 0; font-size: .87rem; }
+.callout-info { background: var(--info-lt); border-left: 3px solid var(--info); }
+.callout-warn { background: var(--warn-lt); border-left: 3px solid var(--warn); }
+.callout-ok   { background: var(--ok-lt);   border-left: 3px solid var(--ok); }
+.callout-crit { background: var(--crit-lt); border-left: 3px solid var(--crit); }
+.callout p { color: inherit; margin: 0; }
+
+/* Steps */
+.steps { display: flex; flex-direction: column; }
+.step { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding-block: 15px; border-bottom: 1px solid var(--border); }
+.step:last-child { border-bottom: none; }
+.step-n { width: 28px; height: 28px; border: 2px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: .9rem; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.step h4 { font-size: .9rem; font-weight: 600; margin: 0 0 4px; }
+.step p  { font-size: .84rem; margin: 0 0 8px; }
+
+/* Module cards (interprétation pédagogique) */
+.module { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.module-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.module-title { font-weight: 600; font-size: .9rem; display: flex; align-items: center; gap: 10px; }
+.module-num { font-family: var(--mono); font-size: .7rem; color: var(--txt-2); }
+.module-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.module-body p { font-size: .85rem; margin: 0; }
+
+/* Status badges */
+.badge { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+.badge-ok   { background: var(--ok-lt);   color: var(--ok); }
+.badge-warn { background: var(--warn-lt); color: var(--warn); }
+.badge-crit { background: var(--crit-lt); color: var(--crit); }
+.badge-info { background: var(--info-lt); color: var(--info); }
+
+/* Decision table */
+.decision-table { width: 100%; border-collapse: collapse; font-size: .84rem; margin: 12px 0; }
+.decision-table th { text-align: left; padding: 8px 10px; background: var(--bg); border-bottom: 2px solid var(--border); font-size: .76rem; font-weight: 600; color: var(--txt-2); letter-spacing: .03em; }
+.decision-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.decision-table tr:last-child td { border-bottom: none; }
+.decision-table td:first-child { font-family: var(--mono); font-size: .78rem; white-space: nowrap; }
+
+/* USB filesystem table */
+.fs-table { width: 100%; border-collapse: collapse; font-size: .84rem; margin: 12px 0; }
+.fs-table th { padding: 7px 10px; background: var(--bg); border-bottom: 2px solid var(--border); font-size: .75rem; font-weight: 600; color: var(--txt-2); text-align: left; }
+.fs-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.fs-table tr:last-child td { border-bottom: none; }
+
+/* Checklist */
+.checklist { list-style: none; padding: 0; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.checklist li { font-size: .87rem; padding-left: 22px; position: relative; color: var(--txt-2); }
+.checklist li::before { content: ''; position: absolute; left: 0; top: 6px; width: 12px; height: 12px; border: 2px solid var(--border); border-radius: 2px; }
+
+/* Print */
+@media print {
+  body { background: #fff; color: #000; }
+  .cover { background: #0F766E; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .section { page-break-inside: avoid; }
+}
+@media (max-width: 560px) {
+  .cover { padding: 28px 18px; }
+}
+</style>
+
+<div class="page">
+
+<!-- COVER -->
+<div class="cover">
+  <p class="cover-eyebrow">PC-DIAG Pro — Guide complet</p>
+  <h1>Installation, déploiement<br><em>&amp; interprétation des diagnostics</em></h1>
+  <p class="cover-sub">Clé USB bootable · Ventoy + SystemRescue · 11 modules de diagnostic · Rapport HTML/PDF automatique</p>
+  <div class="cover-meta">
+    <span>Version 4.1 — Septembre 2026</span>
+    <span>Debian · Ubuntu · Arch Linux (SystemRescue)</span>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <h2>Sommaire</h2>
+  <ol>
+    <li><a href="#prerequis">Prérequis</a></li>
+    <li><a href="#preparation">Préparer la clé USB</a></li>
+    <li><a href="#personnalisation">Personnaliser le rapport (logo, couleurs)</a></li>
+    <li><a href="#lancement">Lancer un diagnostic</a></li>
+    <li><a href="#rapport">Lire et remettre le rapport</a></li>
+    <li><a href="#interpretation">Interpréter chaque module</a>
+      <ul class="sub">
+        <li><a href="#m-outils">Outils système</a></li>
+        <li><a href="#m-mb">Carte mère &amp; BIOS/UEFI</a></li>
+        <li><a href="#m-cpu">Processeur (CPU)</a></li>
+        <li><a href="#m-ram">Mémoire vive (RAM)</a></li>
+        <li><a href="#m-ramtest">Test intégrité RAM</a></li>
+        <li><a href="#m-disques">Disques (SMART + vitesse)</a></li>
+        <li><a href="#m-gpu">Carte graphique</a></li>
+        <li><a href="#m-stress">Stress-test CPU</a></li>
+        <li><a href="#m-batterie">Batterie</a></li>
+        <li><a href="#m-reseau">Réseau, USB, Bluetooth</a></li>
+        <li><a href="#m-partitions">Partitions &amp; OS détectés</a></li>
+      </ul>
+    </li>
+    <li><a href="#clonage">Cloner la clé pour un autre poste</a></li>
+    <li><a href="#maj">Mettre à jour pc-diag</a></li>
+    <li><a href="#faq">FAQ dépannage</a></li>
+  </ol>
+</div>
+
+<!-- 1. PRÉREQUIS -->
+<div class="section" id="prerequis">
+  <p class="section-num">Section 1</p>
+  <h2>Prérequis</h2>
+
+  <h3>Pour préparer la clé USB (une seule fois)</h3>
+  <ul class="checklist">
+    <li>Un PC sous Linux, Windows ou macOS</li>
+    <li>Une clé USB de <strong>8 Go minimum</strong> (16 Go recommandé — pour stocker les rapports)</li>
+    <li>Docker installé et daemon actif (nécessaire pour construire l'ISO personnalisée)</li>
+    <li>L'ISO SystemRescue officielle téléchargée depuis <strong>system-rescue.org</strong></li>
+    <li>Ventoy installé sur la clé (<strong>ventoy.net</strong> — version ≥ 1.0.97)</li>
+  </ul>
+
+  <h3>Pour lancer un diagnostic (sur le PC à diagnostiquer)</h3>
+  <ul class="checklist">
+    <li>Accès au BIOS/UEFI pour démarrer sur USB</li>
+    <li>Aucun logiciel supplémentaire — tout est dans l'ISO</li>
+    <li>Secure Boot : doit être <strong>désactivé</strong> (sinon SystemRescue ne démarre pas)</li>
+  </ul>
+
+  <div class="callout callout-warn">
+    <p><strong>Données personnelles :</strong> le script fonctionne en lecture seule. Il ne modifie aucun fichier sur le PC diagnostiqué. Les rapports sont enregistrés sur la clé USB, jamais sur le disque du client.</p>
+  </div>
+</div>
+
+<!-- 2. PRÉPARATION CLÉ -->
+<div class="section" id="preparation">
+  <p class="section-num">Section 2</p>
+  <h2>Préparer la clé USB</h2>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-n">1</div>
+      <div>
+        <h4>Installer Ventoy sur la clé</h4>
+        <p>Téléchargez Ventoy et lancez <code>VentoyGUI</code> (Windows/Linux) ou <code>sudo sh Ventoy2Disk.sh -I /dev/sdX</code>. Sélectionnez votre clé et cliquez <em>Install</em>. La clé sera formatée.</p>
+        <div class="callout callout-crit" style="margin-top:6px"><p><strong>Attention :</strong> toutes les données de la clé seront effacées. Faites une sauvegarde si nécessaire.</p></div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">2</div>
+      <div>
+        <h4>Construire l'ISO SystemRescue personnalisée</h4>
+        <p>L'ISO officielle ne contient pas tous les outils (<code>smartmontools</code>, <code>dmidecode</code>, <code>hivex</code>…). Le script de build les intègre automatiquement.</p>
+        <div class="code-block">
+          <div class="code-label">Terminal — depuis le dossier pc-diag/</div>
+          <div class="code-body">cd build/
+./build-iso.sh /chemin/vers/systemrescue-11.x-amd64.iso
+<span class="c"># Génère systemrescue-pcdiag.iso (5-15 min selon connexion)</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">3</div>
+      <div>
+        <h4>Copier l'ISO sur la clé Ventoy</h4>
+        <div class="code-block">
+          <div class="code-body">cp systemrescue-pcdiag.iso /media/$USER/Ventoy/</div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">4</div>
+      <div>
+        <h4>Copier le script et son hash</h4>
+        <div class="code-block">
+          <div class="code-body">mkdir -p /media/$USER/Ventoy/outils/
+cp pc-diag.sh        /media/$USER/Ventoy/outils/
+cp pc-diag.sh.sha256 /media/$USER/Ventoy/outils/
+<span class="c"># Si config.sh est créé (personnalisation) :</span>
+cp config.sh         /media/$USER/Ventoy/outils/</div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">5</div>
+      <div>
+        <h4>Créer le dossier de rapports</h4>
+        <div class="code-block">
+          <div class="code-body">mkdir -p /media/$USER/Ventoy/rapports/</div>
+        </div>
+        <p>Les rapports HTML seront automatiquement copiés ici après chaque diagnostic.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. PERSONNALISATION -->
+<div class="section" id="personnalisation">
+  <p class="section-num">Section 3</p>
+  <h2>Personnaliser le rapport</h2>
+  <p>Créez un fichier <code>config.sh</code> dans le dossier <code>outils/</code> de la clé (à côté de <code>pc-diag.sh</code>) :</p>
+
+  <div class="code-block">
+    <div class="code-label">Ventoy/outils/config.sh</div>
+    <div class="code-body"><span class="c"># Nom affiché dans l'en-tête du rapport</span>
+<span class="v">ORG_NAME</span>=<span class="s">"Repair Café Lyon"</span>
+
+<span class="c"># Couleur d'accent (hex) — exemple : bleu #1D4ED8, vert #15803D, orange #C2410C</span>
+<span class="v">ORG_COLOR</span>=<span class="s">"#C2410C"</span>
+
+<span class="c"># Logo (chemin sur la clé ou URL si réseau dispo)</span>
+<span class="v">ORG_LOGO</span>=<span class="s">"/mnt/ventoy/outils/logo.png"</span>
+
+<span class="c"># Contact affiché en pied de page</span>
+<span class="v">ORG_CONTACT</span>=<span class="s">"Repair Café Lyon — contact@repaircafe-lyon.fr"</span></div>
+  </div>
+
+  <div class="callout callout-info">
+    <p><strong>Format logo :</strong> PNG ou JPG, fond transparent recommandé, hauteur idéale 80-120 px. Le logo est redimensionné automatiquement à 40 px de hauteur dans le rapport.</p>
+  </div>
+</div>
+
+<!-- 4. LANCEMENT -->
+<div class="section" id="lancement">
+  <p class="section-num">Section 4</p>
+  <h2>Lancer un diagnostic</h2>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-n">1</div>
+      <div>
+        <h4>Démarrer sur la clé USB</h4>
+        <p>Branchez la clé, redémarrez le PC et accédez au menu de démarrage (touche <code>F12</code>, <code>F11</code>, <code>Esc</code> ou <code>Del</code> selon le fabricant). Sélectionnez la clé USB.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">2</div>
+      <div>
+        <h4>Choisir l'ISO dans Ventoy</h4>
+        <p>Le menu Ventoy s'affiche. Sélectionnez <strong>systemrescue-pcdiag.iso</strong> et appuyez sur Entrée. Choisissez <em>Boot SystemRescue</em>.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">3</div>
+      <div>
+        <h4>Copier et lancer le script</h4>
+        <div class="code-block">
+          <div class="code-body">startx  <span class="c"># optionnel — ouvre l'interface graphique</span>
+mkdir -p ~/outils
+cp /mnt/ventoy/outils/pc-diag.sh ~/outils/
+sudo ~/outils/pc-diag.sh</div>
+        </div>
+        <p>Durée du diagnostic : <strong>3 à 8 minutes</strong> selon le matériel. Le script affiche sa progression en temps réel.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">4</div>
+      <div>
+        <h4>Récupérer le rapport</h4>
+        <p>À la fin, le rapport HTML est copié automatiquement dans <code>/mnt/ventoy/rapports/rapport_YYYYMMDD_HHMMSS.html</code>. Il s'ouvre aussi dans le navigateur si une interface graphique est active.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. RAPPORT -->
+<div class="section" id="rapport">
+  <p class="section-num">Section 5</p>
+  <h2>Lire et remettre le rapport</h2>
+
+  <p>Le rapport HTML s'ouvre dans n'importe quel navigateur (Firefox, Chrome, Safari). En haut, le tableau de synthèse résume l'état général en 4 compteurs :</p>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0">
+    <div style="background:var(--ok-lt);border:1px solid var(--ok);border-radius:8px;padding:14px;text-align:center">
+      <div style="font-family:var(--mono);font-size:1.6rem;font-weight:700;color:var(--ok)">3</div>
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ok);margin-top:3px">OK</div>
+    </div>
+    <div style="background:var(--warn-lt);border:1px solid var(--warn);border-radius:8px;padding:14px;text-align:center">
+      <div style="font-family:var(--mono);font-size:1.6rem;font-weight:700;color:var(--warn)">2</div>
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--warn);margin-top:3px">Attention</div>
+    </div>
+    <div style="background:var(--crit-lt);border:1px solid var(--crit);border-radius:8px;padding:14px;text-align:center">
+      <div style="font-family:var(--mono);font-size:1.6rem;font-weight:700;color:var(--crit)">1</div>
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--crit);margin-top:3px">Critique</div>
+    </div>
+    <div style="background:var(--info-lt);border:1px solid var(--info);border-radius:8px;padding:14px;text-align:center">
+      <div style="font-family:var(--mono);font-size:1.6rem;font-weight:700;color:var(--info)">5</div>
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--info);margin-top:3px">Info</div>
+    </div>
+  </div>
+
+  <h3>Remettre le rapport au client</h3>
+  <p>Pour générer un PDF : ouvrez le rapport dans Firefox ou Chrome → <strong>Ctrl+P</strong> → <em>Enregistrer en PDF</em>. La mise en page d'impression est optimisée.</p>
+
+  <div class="callout callout-ok">
+    <p><strong>Astuce :</strong> Renommez le fichier avec le nom du client avant de lui envoyer — ex. <code>diagnostic-dupont-jean-20260918.pdf</code>.</p>
+  </div>
+</div>
+
+<!-- 6. INTERPRÉTATION -->
+<div class="section" id="interpretation">
+  <p class="section-num">Section 6</p>
+  <h2>Interpréter chaque module</h2>
+  <p>Cette section explique ce que mesure chaque module, comment lire les résultats et quelle action recommander au client.</p>
+
+  <!-- MODULE 1 — OUTILS -->
+  <div class="module" id="m-outils">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[1/11]</span> Outils système</span>
+      <span class="badge badge-info">prérequis</span>
+    </div>
+    <div class="module-body">
+      <p>Ce module vérifie la présence des outils de diagnostic (<code>smartmontools</code>, <code>dmidecode</code>, <code>lm_sensors</code>, etc.) dans l'ISO. S'il affiche <span class="badge badge-ok">OK</span>, tous les tests suivants seront complets.</p>
+      <p>S'il affiche <span class="badge badge-warn">ATTENTION</span> avec une liste d'outils manquants : vous utilisez l'ISO officielle sans personnalisation. Rebuildez l'ISO avec <code>build-iso.sh</code> pour avoir tous les outils pré-intégrés.</p>
+    </div>
+  </div>
+
+  <!-- MODULE 2 — CARTE MÈRE -->
+  <div class="module" id="m-mb">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[2/11]</span> Carte mère &amp; BIOS/UEFI</span>
+      <span class="badge badge-info">identification</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> fabricant, modèle, numéro de série, version BIOS, date du BIOS, mode de démarrage (UEFI ou Legacy).</p>
+      <table class="decision-table">
+        <tr><th>Ce que vous voyez</th><th>Ce que ça signifie</th><th>Action recommandée</th></tr>
+        <tr><td><span class="badge badge-warn">ATTENTION</span> BIOS daté de +5 ans</td><td>Failles de sécurité connues, incompatibilités matérielles possibles</td><td>Proposer une mise à jour BIOS (opération avancée)</td></tr>
+        <tr><td>Mode Legacy/CSM</td><td>PC ancien ou configuration non optimale</td><td>Informer le client — migration UEFI possible si Windows 11 est envisagé</td></tr>
+        <tr><td>Numéro de série présent</td><td>Garantie vérifiable sur le site du fabricant</td><td>Indiquer au client pour suivi SAV</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODULE 3 — CPU -->
+  <div class="module" id="m-cpu">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[3/11]</span> Processeur (CPU)</span>
+      <span class="badge badge-info">performance &amp; température</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> modèle, fréquence actuelle/max, nombre de cœurs, température, gouverneur de fréquence.</p>
+      <table class="decision-table">
+        <tr><th>Ce que vous voyez</th><th>Ce que ça signifie</th><th>Action recommandée</th></tr>
+        <tr><td>Température &gt; 80°C au repos</td><td>Pasta thermique dégradée ou ventilateur encrassé</td><td>Nettoyage ventirad + remplacement pasta thermique</td></tr>
+        <tr><td>Fréquence bloquée bas (throttling)</td><td>Le CPU se bride pour éviter la surchauffe</td><td>Même action — nettoyage urgent</td></tr>
+        <tr><td>Gouverneur <code>powersave</code></td><td>Normal sur laptop, peut limiter les performances</td><td>Informer — aucune action requise</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODULE 4 — RAM -->
+  <div class="module" id="m-ram">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[4/11]</span> Mémoire vive (RAM)</span>
+      <span class="badge badge-info">identification</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> capacité totale, nombre de barrettes, fréquence, type (DDR4/DDR5), slots occupés/libres.</p>
+      <table class="decision-table">
+        <tr><th>Ce que vous voyez</th><th>Ce que ça signifie</th><th>Action recommandée</th></tr>
+        <tr><td>4 Go ou moins</td><td>Insuffisant pour Windows 11 ou usage courant</td><td>Proposer une extension RAM si slots libres</td></tr>
+        <tr><td>Slot libre détecté</td><td>Upgrade possible sans remplacer l'existant</td><td>Mentionner l'opportunité d'upgrade dans le rapport</td></tr>
+        <tr><td>Fréquence inférieure au max supporté</td><td>XMP/EXPO non activé dans le BIOS</td><td>Activation possible dans le BIOS (opération avancée)</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODULE 5 — TEST RAM -->
+  <div class="module" id="m-ramtest">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[5/11]</span> Test intégrité RAM (rapide)</span>
+      <span class="badge badge-crit">critique si échoue</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> test d'écriture/lecture en mémoire via <code>memtester</code> (1 passe sur 256 Mo ou 10% de la RAM). Durée : 30 secondes à 2 minutes.</p>
+      <div class="callout callout-crit">
+        <p><strong>Si le test échoue</strong> (erreurs détectées) : la RAM est défaillante. Cela explique les plantages, les écrans bleus et les corruptions de fichiers. Remplacement de la barrette fautive nécessaire.</p>
+      </div>
+      <p><strong>Limite :</strong> ce test est rapide — une RAM légèrement défaillante peut passer. Si le client se plaint de plantages inexpliqués, recommandez un test RAM complet (Memtest86+ sur une nuit entière).</p>
+    </div>
+  </div>
+
+  <!-- MODULE 6 — DISQUES -->
+  <div class="module" id="m-disques">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[6/11]</span> Disques de stockage (SMART + vitesse)</span>
+      <span class="badge badge-crit">module le plus important</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> état SMART de chaque disque (HDD/SSD/NVMe), nombre de secteurs défectueux réalloués, heures de fonctionnement, température, vitesse lecture séquentielle.</p>
+      <table class="decision-table">
+        <tr><th>Indicateur SMART</th><th>Seuil d'alerte</th><th>Action recommandée</th></tr>
+        <tr><td>Reallocated Sectors Count</td><td>&gt; 0</td><td><span class="badge badge-warn">ATTENTION</span> — surveillance accrue, sauvegarde immédiate</td></tr>
+        <tr><td>Reallocated Sectors Count</td><td>&gt; 50</td><td><span class="badge badge-crit">CRITIQUE</span> — remplacement disque urgent</td></tr>
+        <tr><td>Pending Sectors</td><td>&gt; 0</td><td>Secteurs en attente de réallocation — risque de perte de données</td></tr>
+        <tr><td>Power On Hours</td><td>HDD &gt; 30 000h / SSD &gt; 50 000h</td><td>Fin de vie prévisible — anticiper le remplacement</td></tr>
+        <tr><td>Vitesse lecture</td><td>HDD &lt; 80 Mo/s · SSD &lt; 200 Mo/s · NVMe &lt; 1 000 Mo/s</td><td>Disque dégradé ou mauvais port SATA</td></tr>
+      </table>
+      <div class="callout callout-warn">
+        <p><strong>Règle pratique :</strong> un disque avec des secteurs réalloués n'est pas forcément mort, mais il faut toujours recommander une sauvegarde immédiate. Expliquez au client que ces secteurs sont des "zones abîmées" que le disque a déjà contournées.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODULE 7 — GPU -->
+  <div class="module" id="m-gpu">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[7/11]</span> Carte graphique (GPU)</span>
+      <span class="badge badge-info">identification &amp; température</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> modèle GPU, driver chargé, température (AMD/Intel/NVIDIA), VRAM utilisée/totale (NVIDIA via <code>nvidia-smi</code>).</p>
+      <table class="decision-table">
+        <tr><th>Ce que vous voyez</th><th>Ce que ça signifie</th><th>Action recommandée</th></tr>
+        <tr><td>Température &gt; 85°C</td><td>GPU en surchauffe — pasta thermique ou ventilateurs</td><td>Nettoyage GPU + remplacement pasta si carte dédiée</td></tr>
+        <tr><td>Driver <code>nouveau</code> au lieu de <code>nvidia</code></td><td>Driver propriétaire non installé</td><td>Installer le driver NVIDIA officiel sous Windows/Linux</td></tr>
+        <tr><td>GPU non détecté</td><td>Carte dédiée absente ou port PCIe défaillant</td><td>Vérifier la connexion physique de la carte</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODULE 8 — STRESS CPU -->
+  <div class="module" id="m-stress">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[8/11]</span> Stress-test CPU (30 secondes)</span>
+      <span class="badge badge-warn">test de charge</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> charge tous les cœurs CPU à 100% pendant 30 secondes et relève la température de fin de test. Détecte le thermal throttling sous charge.</p>
+      <table class="decision-table">
+        <tr><th>Résultat</th><th>Interprétation</th><th>Action</th></tr>
+        <tr><td>Temp finale &lt; 75°C</td><td>Refroidissement correct</td><td>Aucune action</td></tr>
+        <tr><td>Temp finale 75–90°C</td><td>Refroidissement limite</td><td>Nettoyage préventif recommandé</td></tr>
+        <tr><td>Temp finale &gt; 90°C</td><td>Surchauffe confirmée sous charge normale</td><td>Remplacement pasta thermique urgent</td></tr>
+        <tr><td>Fréquence chute pendant le test</td><td>Thermal throttling détecté</td><td>Même action — le CPU se bride pour survivre</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- MODULE 9 — BATTERIE -->
+  <div class="module" id="m-batterie">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[9/11]</span> Batterie</span>
+      <span class="badge badge-info">laptops uniquement</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> capacité de design (neuf), capacité actuelle (usée), capacité restante (%), nombre de cycles de charge, état ACPI.</p>
+      <table class="decision-table">
+        <tr><th>Santé batterie</th><th>Interprétation</th><th>À dire au client</th></tr>
+        <tr><td>&gt; 80%</td><td>Batterie en bonne santé</td><td>Aucun problème</td></tr>
+        <tr><td>50–80%</td><td>Usure normale</td><td>Autonomie réduite — remplacement si gênant</td></tr>
+        <tr><td>&lt; 50%</td><td>Batterie fortement dégradée</td><td>Remplacement recommandé</td></tr>
+        <tr><td>État "Unknown" ou "Critical"</td><td>Cellule défaillante ou capteur mort</td><td>Diagnostic approfondi ou remplacement</td></tr>
+      </table>
+      <p>Sur les PC de bureau (pas de batterie) : ce module affiche <span class="badge badge-info">INFO</span> — Aucune batterie détectée. C'est normal.</p>
+    </div>
+  </div>
+
+  <!-- MODULE 10 — RÉSEAU -->
+  <div class="module" id="m-reseau">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[10/11]</span> Réseau, Bluetooth &amp; USB</span>
+      <span class="badge badge-info">inventaire périphériques</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> interfaces réseau détectées (Ethernet, Wi-Fi), état du Bluetooth, contrôleurs USB (USB 2.0/3.x), ports disponibles.</p>
+      <p>Ce module est principalement informatif. Il permet de :</p>
+      <ul>
+        <li>Confirmer que la carte Wi-Fi est reconnue (même sans connexion active)</li>
+        <li>Détecter un contrôleur USB mort (port qui ne détecte rien)</li>
+        <li>Identifier le chipset réseau pour trouver les drivers sous Windows</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- MODULE 11 — PARTITIONS & OS -->
+  <div class="module" id="m-partitions">
+    <div class="module-head">
+      <span class="module-title"><span class="module-num">[11/11]</span> Table des partitions &amp; OS détectés</span>
+      <span class="badge badge-info">analyse OS</span>
+    </div>
+    <div class="module-body">
+      <p><strong>Ce que ça mesure :</strong> schéma de partitionnement (MBR/GPT), taille et type de chaque partition, OS détectés (Windows/Linux/macOS), espace libre, état du système Windows (registre offline via <code>hivex</code>).</p>
+      <table class="decision-table">
+        <tr><th>Ce que vous voyez</th><th>Interprétation</th><th>Action</th></tr>
+        <tr><td>Espace libre &lt; 10% sur C:\</td><td>Disque système presque plein</td><td>Nettoyage disque recommandé</td></tr>
+        <tr><td>Partition de récupération absente</td><td>Réinitialisation Windows impossible</td><td>Mentionner au client</td></tr>
+        <tr><td>MBR sur un PC UEFI</td><td>Windows 11 incompatible</td><td>Conversion GPT possible (diskpart)</td></tr>
+        <tr><td>Mises à jour manquantes détectées</td><td>Système non à jour via registre offline</td><td>Informer le client — lancer Windows Update</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 7. CLONAGE -->
+<div class="section" id="clonage">
+  <p class="section-num">Section 7</p>
+  <h2>Cloner la clé pour un autre poste</h2>
+  <p>Pour équiper un deuxième technicien, la méthode la plus rapide est un clone bit-à-bit :</p>
+  <div class="code-block">
+    <div class="code-label">Linux — cloner la clé source vers une nouvelle clé</div>
+    <div class="code-body"><span class="c"># Identifier les clés (source = /dev/sdb, destination = /dev/sdc)</span>
+lsblk
+
+<span class="c"># Cloner — adapter les chemins /dev/sdX</span>
+sudo dd if=/dev/sdb of=/dev/sdc bs=4M status=progress
+<span class="c"># Durée : 5-15 min selon la taille de la clé</span></div>
+  </div>
+  <div class="callout callout-info">
+    <p><strong>Alternative plus rapide :</strong> copiez uniquement les fichiers (ISO + outils + rapports) sur une nouvelle clé déjà équipée de Ventoy. Les deux méthodes fonctionnent.</p>
+  </div>
+</div>
+
+<!-- 8. MàJ -->
+<div class="section" id="maj">
+  <p class="section-num">Section 8</p>
+  <h2>Mettre à jour pc-diag</h2>
+  <p>Si seul le script est mis à jour (pas l'ISO), il suffit de recopier <code>pc-diag.sh</code> et de régénérer le hash :</p>
+  <div class="code-block">
+    <div class="code-body">cp pc-diag.sh /media/$USER/Ventoy/outils/
+./update-hash.sh pc-diag.sh
+cp pc-diag.sh.sha256 /media/$USER/Ventoy/outils/</div>
+  </div>
+  <p>L'ISO n'a pas à être reconstruite — seul le script change. Si de nouveaux outils sont ajoutés à <code>build/packages.txt</code>, une reconstruction complète de l'ISO est nécessaire.</p>
+</div>
+
+<!-- 9. FAQ -->
+<div class="section" id="faq">
+  <p class="section-num">Section 9</p>
+  <h2>FAQ dépannage</h2>
+
+  <div style="display:flex;flex-direction:column;gap:0">
+    <div style="border-bottom:1px solid var(--border);padding-block:13px">
+      <p style="font-weight:600;font-size:.9rem;margin-bottom:4px">Le PC ne démarre pas sur la clé USB</p>
+      <p style="font-size:.84rem">Vérifiez que le Secure Boot est désactivé dans le BIOS. Testez une autre touche de menu boot (F12, F11, Esc, Del). Sur certains HP, appuyez sur F9 spécifiquement.</p>
+    </div>
+    <div style="border-bottom:1px solid var(--border);padding-block:13px">
+      <p style="font-weight:600;font-size:.9rem;margin-bottom:4px">Avertissement "Intégrité du script non vérifiée"</p>
+      <p style="font-size:.84rem">Le fichier <code>pc-diag.sh.sha256</code> est absent ou ne correspond plus au script. Recopiez le script et relancez <code>update-hash.sh</code>.</p>
+    </div>
+    <div style="border-bottom:1px solid var(--border);padding-block:13px">
+      <p style="font-weight:600;font-size:.9rem;margin-bottom:4px">Le rapport n'est pas copié sur la clé</p>
+      <p style="font-size:.84rem">Ventoy n'est pas monté sur <code>/mnt/ventoy</code>. Montez-le manuellement : <code>mkdir -p /mnt/ventoy && mount /dev/sda1 /mnt/ventoy</code> (adaptez <code>/dev/sda1</code>). Puis copiez manuellement : <code>cp /root/rapports/*.html /mnt/ventoy/rapports/</code></p>
+    </div>
+    <div style="border-bottom:1px solid var(--border);padding-block:13px">
+      <p style="font-weight:600;font-size:.9rem;margin-bottom:4px">Certains modules affichent "outil absent"</p>
+      <p style="font-size:.84rem">Vous utilisez l'ISO officielle sans les paquets intégrés. Rebuildez l'ISO avec <code>build/build-iso.sh</code>. Sur l'ISO officielle, vous pouvez installer temporairement : <code>pacman -Sy smartmontools dmidecode lm_sensors hivex</code> (perdu au redémarrage).</p>
+    </div>
+    <div style="padding-block:13px">
+      <p style="font-weight:600;font-size:.9rem;margin-bottom:4px">Le test RAM se bloque</p>
+      <p style="font-size:.84rem">Sur une machine avec beaucoup de RAM (&gt; 32 Go) ou très lente, le test peut prendre plusieurs minutes. Si le script semble bloqué après 10 minutes, appuyez sur <code>Ctrl+C</code> — les autres modules continueront. Le rapport sera incomplet pour ce module uniquement.</p>
+    </div>
+  </div>
+</div>
+
+</div>
