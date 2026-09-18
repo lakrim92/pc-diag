@@ -18,11 +18,32 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 VERSION="4.1"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+HOSTNAME_DIAG="$(hostname 2>/dev/null || echo inconnu)"
+
+# Branding — valeurs par défaut (surchargées par config.sh si présent)
+ORG_NAME=""
+ORG_COLOR="#238636"
+ORG_LOGO=""
+ORG_CONTACT=""
+
+# Chargement de config.sh depuis le même dossier que le script (ou /mnt/ventoy/outils/)
+_SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
+for _cfg in \
+    "${_SCRIPT_DIR}/config.sh" \
+    "/mnt/ventoy/outils/config.sh" \
+    "/run/archiso/bootmnt/outils/config.sh"
+do
+    if [ -f "$_cfg" ]; then
+        # shellcheck source=/dev/null
+        source "$_cfg"
+        break
+    fi
+done
+
 OUTDIR="${OUTDIR:-/root/rapports}"
 MOUNT_ROOT="/tmp/pcdiag_mnt"
 REPORT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.html"
 TXT_FILE="${OUTDIR}/rapport_${TIMESTAMP}.txt"
-HOSTNAME_DIAG="$(hostname 2>/dev/null || echo inconnu)"
 
 mkdir -p "$OUTDIR" "$MOUNT_ROOT"
 
@@ -229,7 +250,7 @@ body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
 
 /* Header */
 header{background:#0d1117;color:#f0f6fc;padding:26px 40px;
-       border-bottom:3px solid #238636}
+       border-bottom:3px solid ${ORG_COLOR:-#238636}}
 .header-inner{max-width:960px;margin:0 auto;display:flex;
               justify-content:space-between;align-items:flex-end;
               gap:16px;flex-wrap:wrap}
@@ -329,9 +350,12 @@ footer{text-align:center;color:var(--muted);font-size:11px;margin-top:32px}
 <body>
 <header>
   <div class="header-inner">
-    <div>
-      <h1>Rapport de diagnostic PC</h1>
-      <div class="meta">Hôte : ${HOSTNAME_DIAG} &nbsp;·&nbsp; $(date '+%d/%m/%Y à %H:%M:%S')</div>
+    <div style="display:flex;align-items:center;gap:16px">
+$([ -n "${ORG_LOGO}" ] && printf '      <img src="%s" alt="logo" style="height:40px;object-fit:contain;border-radius:4px">\n' "${ORG_LOGO}")
+      <div>
+        <h1>Rapport de diagnostic PC$([ -n "${ORG_NAME}" ] && printf ' &mdash; %s' "${ORG_NAME}")</h1>
+        <div class="meta">Hôte : ${HOSTNAME_DIAG} &nbsp;·&nbsp; $(date '+%d/%m/%Y à %H:%M:%S')</div>
+      </div>
     </div>
     <span class="ver">PC-DIAG v${VERSION}</span>
   </div>
@@ -344,7 +368,7 @@ write_html_footer() {
 cat >> "$REPORT_FILE" <<HTML
   <footer>
     PC-DIAG v${VERSION} — 100% local · sans réseau · sans intelligence artificielle<br>
-    Aucune donnée n'a quitté cette machine.
+    Aucune donnée n'a quitté cette machine.$([ -n "${ORG_CONTACT}" ] && printf '<br>%s' "${ORG_CONTACT}")
   </footer>
 </div>
 </body>

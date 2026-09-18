@@ -1,4 +1,5 @@
 rapports/
+config.sh
 *.tmp
 *.iso
 build/recipe-dir/
